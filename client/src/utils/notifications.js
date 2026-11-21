@@ -1,6 +1,6 @@
-// Web Notifications & Synthesized Audio Ringtone / Chimes
+// Synthesized Authentic Phone Ringtone & Call Audio Engine
 
-let activeRingtoneInterval = null;
+let ringtoneInterval = null;
 let audioCtx = null;
 
 function getAudioContext() {
@@ -16,84 +16,106 @@ function getAudioContext() {
   return audioCtx;
 }
 
-// Play single gentle chime
-export function playChime(type = 'takbeer') {
-  try {
-    const ctx = getAudioContext();
-    if (!ctx) return;
+// Authentic Smartphone Marimba-style Ringtone Melody
+export function playPhoneRingtoneCycle() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
 
-    const now = ctx.currentTime;
-    const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
-    const gainNode = ctx.createGain();
+  const notes = [
+    { freq: 659.25, time: 0.0, dur: 0.12 }, // E5
+    { freq: 587.33, time: 0.15, dur: 0.12 }, // D5
+    { freq: 739.99, time: 0.30, dur: 0.14 }, // F#5
+    { freq: 830.61, time: 0.48, dur: 0.14 }, // G#5
+    { freq: 554.37, time: 0.65, dur: 0.12 }, // C#5
+    { freq: 493.88, time: 0.80, dur: 0.12 }, // B4
+    { freq: 587.33, time: 0.95, dur: 0.14 }, // D5
+    { freq: 659.25, time: 1.12, dur: 0.14 }, // E5
+    { freq: 493.88, time: 1.30, dur: 0.12 }, // B4
+    { freq: 440.00, time: 1.45, dur: 0.12 }, // A4
+    { freq: 554.37, time: 1.60, dur: 0.14 }, // C#5
+    { freq: 659.25, time: 1.78, dur: 0.14 }, // E5
+    { freq: 880.00, time: 1.95, dur: 0.35 }, // A5
+  ];
 
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(523.25, now); // C5
-    osc1.frequency.exponentialRampToValueAtTime(659.25, now + 0.3); // E5
-    osc1.frequency.exponentialRampToValueAtTime(783.99, now + 0.6); // G5
+  const now = ctx.currentTime;
 
-    osc2.type = 'triangle';
-    osc2.frequency.setValueAtTime(261.63, now); // C4
-    osc2.frequency.exponentialRampToValueAtTime(329.63, now + 0.4);
+  notes.forEach(({ freq, time, dur }) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
 
-    gainNode.gain.setValueAtTime(0.35, now);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 2.0);
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, now + time);
 
-    osc1.connect(gainNode);
-    osc2.connect(gainNode);
-    gainNode.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.001, now + time);
+    gain.gain.exponentialRampToValueAtTime(0.35, now + time + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + time + dur);
 
-    osc1.start(now);
-    osc2.start(now);
-    osc1.stop(now + 2.0);
-    osc2.stop(now + 2.0);
-  } catch (err) {
-    console.warn('Audio chime notice:', err);
-  }
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now + time);
+    osc.stop(now + time + dur + 0.05);
+  });
 }
 
-// Start phone-like repeating ringtone for Incoming Prayer Call alert
+// Start continuous phone ringtone loop
 export function startRingtone() {
   stopRingtone();
-  playChime();
+  playPhoneRingtoneCycle();
 
-  // Repeating harmonic ringtone every 2.5 seconds
-  activeRingtoneInterval = setInterval(() => {
-    playChime();
+  ringtoneInterval = setInterval(() => {
+    playPhoneRingtoneCycle();
     if (navigator.vibrate) {
       try {
-        navigator.vibrate([400, 200, 400]);
+        navigator.vibrate([500, 250, 500, 250]);
       } catch (e) {}
     }
-  }, 2500);
+  }, 3200);
 }
 
 // Stop ringtone
 export function stopRingtone() {
-  if (activeRingtoneInterval) {
-    clearInterval(activeRingtoneInterval);
-    activeRingtoneInterval = null;
+  if (ringtoneInterval) {
+    clearInterval(ringtoneInterval);
+    ringtoneInterval = null;
   }
 }
 
-// Request Notification Permission
+// Alias for backwards compatibility
+export const playChime = playPhoneRingtoneCycle;
+
+// Play connected call Takbeer tone
+export function playConnectedTone() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+
+  // Gentle connected hum
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(440, now);
+  osc.frequency.exponentialRampToValueAtTime(880, now + 0.25);
+  gain.gain.setValueAtTime(0.2, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.6);
+}
+
 export async function requestNotificationPermission() {
-  if (!('Notification' in window)) {
-    return 'unsupported';
-  }
-  const permission = await Notification.requestPermission();
-  return permission;
+  if (!('Notification' in window)) return 'unsupported';
+  return await Notification.requestPermission();
 }
 
-// Trigger browser notification
-export function showNotification({ title, body, icon = '/icon.svg', prayer, sound = true, actions = [] }) {
+export function showNotification({ title, body, icon = '/icon.svg', prayer, sound = true }) {
   if (sound) {
-    playChime('chime');
+    playPhoneRingtoneCycle();
   }
 
-  if (!('Notification' in window) || Notification.permission !== 'granted') {
-    return null;
-  }
+  if (!('Notification' in window) || Notification.permission !== 'granted') return null;
 
   try {
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
@@ -104,16 +126,13 @@ export function showNotification({ title, body, icon = '/icon.svg', prayer, soun
           badge: icon,
           vibrate: [300, 150, 300],
           data: { prayer, timestamp: Date.now() },
-          actions: actions.length > 0 ? actions : [
+          actions: [
             { action: 'mark-prayed', title: '✓ I Prayed' },
           ],
         });
       });
     } else {
-      new Notification(title, {
-        body,
-        icon,
-      });
+      new Notification(title, { body, icon });
     }
   } catch (e) {
     console.error('Error triggering notification:', e);
