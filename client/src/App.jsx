@@ -8,6 +8,9 @@ import QuranTab from './components/QuranTab';
 import StatsTab from './components/StatsTab';
 import SettingsTab from './components/SettingsTab';
 import CallAlertModal from './components/CallAlertModal';
+import AuthModal from './components/AuthModal';
+import AdminModal from './components/AdminModal';
+import FamilyGroupTab from './components/FamilyGroupTab';
 
 import {
   fetchTodaySalah,
@@ -37,18 +40,31 @@ export default function App() {
     'Notification' in window ? Notification.permission : 'unsupported'
   );
 
-  // Incoming Call Alert modal state
+  // User Authentication State
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('salah_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  // Modals
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAdminModal, setShowAdminModal] = useState(false);
   const [callAlertData, setCallAlertData] = useState(null);
 
-  // Keep track of sent notifications today to avoid spamming
+  // Keep track of sent notifications today
   const sentAlertsRef = useRef(new Set());
 
   // Load initial data
-  const loadData = async () => {
+  const loadData = async (user) => {
+    const uId = user?.id || currentUser?.id || 1;
     try {
       const [todaySalah, quran, appSettings, initialQuote] = await Promise.all([
-        fetchTodaySalah(),
-        fetchQuranToday(),
+        fetchTodaySalah(undefined, uId),
+        fetchQuranToday(undefined, uId),
         fetchSettings(),
         fetchMotivation('general'),
       ]);
@@ -66,7 +82,24 @@ export default function App() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentUser]);
+
+  const handleLoginSuccess = (user) => {
+    setCurrentUser(user);
+    try {
+      localStorage.setItem('salah_user', JSON.stringify(user));
+    } catch (e) {}
+    loadData(user);
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    try {
+      localStorage.removeItem('salah_user');
+    } catch (e) {}
+    setShowAuthModal(false);
+    loadData(null);
+  };
 
   // Compute active & next prayer from today's times
   const computeActiveAndNextPrayer = () => {
@@ -122,7 +155,7 @@ export default function App() {
       const followupMinutes = Number(settings.followup_reminder_minutes) || 30;
       const enableSound = Boolean(settings.enable_sound);
 
-      // 1. Check each prayer for on-time and follow-up notifications
+      // Check each prayer for on-time and follow-up notifications
       for (const prayer of salahData.prayers) {
         const [h, m] = prayer.time.split(':').map(Number);
         const prayerMins = h * 60 + m;
@@ -131,11 +164,9 @@ export default function App() {
         const onTimeKey = `${todayStr}-${prayer.name}-ontime`;
         if (nowMins === prayerMins && !sentAlertsRef.current.has(onTimeKey)) {
           sentAlertsRef.current.add(onTimeKey);
-          
-          // Trigger Call Alert overlay
           setCallAlertData({
             prayer,
-            quote: quote || { message: "Hayya 'ala-Salah — Come to Prayer." }
+            quote: quote || { message: "Hayya 'ala-Salah — Come to Prayer." },
           });
 
           showNotification({
@@ -159,11 +190,9 @@ export default function App() {
           sentAlertsRef.current.add(followupKey);
           try {
             const motivation = await fetchMotivation(prayer.name);
-            
-            // Trigger Call Alert screen for follow-up
             setCallAlertData({
               prayer,
-              quote: motivation
+              quote: motivation,
             });
 
             showNotification({
@@ -172,18 +201,11 @@ export default function App() {
               prayer: prayer.name,
               sound: enableSound,
             });
-          } catch (e) {
-            showNotification({
-              title: `Reminder: ${prayer.name.toUpperCase()} Prayer`,
-              body: `Don't miss the blessings of ${prayer.name}. Take 5 minutes now to pray.`,
-              prayer: prayer.name,
-              sound: enableSound,
-            });
-          }
+          } catch (e) {}
         }
       }
 
-      // 2. Check Quran daily reminder
+      // Quran daily reminder
       if (quranData?.settings?.reminder_enabled && !quranData?.todayLog?.completed) {
         const qTime = quranData.settings.reminder_time?.slice(0, 5) || '20:30';
         const [qh, qm] = qTime.split(':').map(Number);
@@ -204,7 +226,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [salahData, settings, quranData, quote]);
 
-  // Request notifications
   const handleRequestNotif = async () => {
     const res = await requestNotificationPermission();
     setNotifPermission(res);
@@ -227,7 +248,6 @@ export default function App() {
     });
   };
 
-  // Trigger Incoming Call Alert Screen Simulation
   const handleTriggerCallAlert = () => {
     setCallAlertData({
       prayer: currentPrayer || { name: 'dhuhr', time: '12:30' },
@@ -239,6 +259,7 @@ export default function App() {
   };
 
   const handleUpdateStatus = async (prayerName, newStatus) => {
+    const uId = currentUser?.id || 1;
     try {
       setSalahData((prev) => ({
         ...prev,
@@ -247,7 +268,7 @@ export default function App() {
         ),
       }));
 
-      await logSalahStatus(prayerName, newStatus);
+      await logSalahStatus(prayerName, newStatus, undefined, uId);
     } catch (err) {
       console.error('Failed to log salah status:', err);
       loadData();
@@ -255,9 +276,10 @@ export default function App() {
   };
 
   const handleLogQuran = async (payload) => {
+    const uId = currentUser?.id || 1;
     try {
-      await logQuranReading(payload);
-      const updatedQuran = await fetchQuranToday();
+      await logQuranReading({ ...payload, userId: uId });
+      const updatedQuran = await fetchQuranToday(undefined, uId);
       setQuranData(updatedQuran);
     } catch (err) {
       console.error('Failed to update Quran log:', err);
@@ -268,7 +290,7 @@ export default function App() {
     try {
       const res = await updatePrayerSettings(newSettings);
       setSettings(res.settings);
-      const refreshedSalah = await fetchTodaySalah();
+      const refreshedSalah = await fetchTodaySalah(undefined, currentUser?.id || 1);
       setSalahData(refreshedSalah);
     } catch (err) {
       console.error('Failed to save prayer settings:', err);
@@ -291,12 +313,15 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <Navbar
-        city={settings?.city}
-        country={settings?.country}
+        city={settings?.city || 'Kochi'}
+        country={settings?.country || 'India (Kerala)'}
         notifPermission={notifPermission}
         onRequestNotif={handleRequestNotif}
         onTestNotif={handleTestNotif}
         onTriggerCallAlert={handleTriggerCallAlert}
+        currentUser={currentUser}
+        onOpenAuth={() => setShowAuthModal(true)}
+        onOpenAdmin={() => setShowAdminModal(true)}
       />
 
       <main className="flex-1 max-w-md w-full mx-auto px-4 pt-4 pb-24 space-y-4">
@@ -307,6 +332,7 @@ export default function App() {
           </div>
         ) : (
           <>
+            {/* PRAYERS TAB */}
             {activeTab === 'prayers' && (
               <>
                 <HeroPrayerCard
@@ -330,20 +356,31 @@ export default function App() {
               </>
             )}
 
+            {/* FAMILY GROUPS TAB */}
+            {activeTab === 'family' && (
+              <FamilyGroupTab
+                currentUser={currentUser}
+                onOpenAuth={() => setShowAuthModal(true)}
+              />
+            )}
+
+            {/* QURAN TAB */}
             {activeTab === 'quran' && (
               <QuranTab
                 quranData={quranData}
                 onLogReading={handleLogQuran}
                 onUpdateSettings={async (payload) => {
                   await updateQuranSettings(payload);
-                  const q = await fetchQuranToday();
+                  const q = await fetchQuranToday(undefined, currentUser?.id || 1);
                   setQuranData(q);
                 }}
               />
             )}
 
-            {activeTab === 'stats' && <StatsTab />}
+            {/* INSIGHTS / STATS TAB (Includes Full Year Data Charts) */}
+            {activeTab === 'stats' && <StatsTab userId={currentUser?.id || 1} />}
 
+            {/* SETTINGS TAB */}
             {activeTab === 'settings' && (
               <SettingsTab
                 settings={settings}
@@ -378,6 +415,21 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Auth Modal (Login / Register / Profile) */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        currentUser={currentUser}
+        onLoginSuccess={handleLoginSuccess}
+        onLogout={handleLogout}
+      />
+
+      {/* Admin Panel Modal (Password 1234) */}
+      <AdminModal
+        isOpen={showAdminModal}
+        onClose={() => setShowAdminModal(false)}
+      />
     </div>
   );
 }

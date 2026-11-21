@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Users, Clock3, AlertCircle, Circle } from 'lucide-react';
+import { Check, Users, Clock3, AlertCircle, Circle, Lock } from 'lucide-react';
 import { formatTime12 } from '../utils/time';
 
 const PRAYER_META = {
@@ -16,8 +16,10 @@ export default function PrayerList({ prayers, onUpdateStatus, currentPrayerName 
     { id: 'jamaah', label: "Jama'ah", icon: Users, color: 'text-blue-400 bg-blue-950/80 border-blue-800' },
     { id: 'late', label: 'Late', icon: Clock3, color: 'text-amber-400 bg-amber-950/80 border-amber-800' },
     { id: 'missed', label: 'Missed', icon: AlertCircle, color: 'text-rose-400 bg-rose-950/80 border-rose-800' },
-    { id: 'pending', label: 'Pending', icon: Circle, color: 'text-slate-400 bg-slate-900 border-slate-700' },
   ];
+
+  const now = new Date();
+  const currentTotalMins = now.getHours() * 60 + now.getMinutes();
 
   return (
     <div className="space-y-3">
@@ -25,7 +27,7 @@ export default function PrayerList({ prayers, onUpdateStatus, currentPrayerName 
         <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">
           Today's Salah Schedule
         </h2>
-        <span className="text-xs text-slate-500">Tap status to log</span>
+        <span className="text-xs text-slate-500">Unlocks at Azan time</span>
       </div>
 
       <div className="space-y-2.5">
@@ -35,13 +37,23 @@ export default function PrayerList({ prayers, onUpdateStatus, currentPrayerName 
           const isDone = prayer.status === 'completed' || prayer.status === 'jamaah';
           const time12 = formatTime12(prayer.time);
 
+          // Check if prayer time has arrived
+          let hasStarted = true;
+          if (prayer.time) {
+            const [h, m] = prayer.time.split(':').map(Number);
+            const prayerMins = h * 60 + m;
+            hasStarted = currentTotalMins >= prayerMins;
+          }
+
           return (
             <div
               key={prayer.name}
               className={`rounded-2xl p-4 transition-all duration-200 border ${
                 isCurrent
                   ? 'bg-slate-900/90 border-emerald-500/50 shadow-md shadow-emerald-950/30 ring-1 ring-emerald-500/30'
-                  : 'bg-slate-900/50 border-slate-800/80 hover:border-slate-700/80'
+                  : hasStarted
+                  ? 'bg-slate-900/50 border-slate-800/80 hover:border-slate-700/80'
+                  : 'bg-slate-950/40 border-slate-900 opacity-70'
               }`}
             >
               <div className="flex items-center justify-between mb-3">
@@ -52,7 +64,9 @@ export default function PrayerList({ prayers, onUpdateStatus, currentPrayerName 
                         ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
                         : isCurrent
                         ? 'bg-emerald-500 text-slate-950'
-                        : 'bg-slate-800 text-slate-300'
+                        : hasStarted
+                        ? 'bg-slate-800 text-slate-300'
+                        : 'bg-slate-900 text-slate-600'
                     }`}
                   >
                     {isDone ? '✓' : meta.label[0]}
@@ -70,34 +84,47 @@ export default function PrayerList({ prayers, onUpdateStatus, currentPrayerName 
                   <span className="text-base font-bold font-mono tracking-tight text-white block">
                     {time12}
                   </span>
-                  {isCurrent && (
+                  {isCurrent ? (
                     <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-950/80 px-1.5 py-0.5 rounded">
-                      Active
+                      Active Now
                     </span>
-                  )}
+                  ) : !hasStarted ? (
+                    <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1 justify-end">
+                      <Lock size={10} /> Upcoming
+                    </span>
+                  ) : null}
                 </div>
               </div>
 
-              {/* Status Selector Pills */}
-              <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-slate-800/60">
-                {statusOptions.slice(0, 4).map((opt) => {
-                  const Icon = opt.icon;
-                  const selected = prayer.status === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      onClick={() => onUpdateStatus(prayer.name, selected ? 'pending' : opt.id)}
-                      className={`py-1.5 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1 border transition-all active:scale-95 ${
-                        selected
-                          ? opt.color + ' shadow-sm font-semibold'
-                          : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <Icon size={12} />
-                      <span className="text-[11px] truncate">{opt.label}</span>
-                    </button>
-                  );
-                })}
+              {/* Status Selector Pills (Enabled ONLY after prayer time starts) */}
+              <div className="pt-2 border-t border-slate-800/60">
+                {hasStarted ? (
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {statusOptions.map((opt) => {
+                      const Icon = opt.icon;
+                      const selected = prayer.status === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => onUpdateStatus(prayer.name, selected ? 'pending' : opt.id)}
+                          className={`py-1.5 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1 border transition-all active:scale-95 ${
+                            selected
+                              ? opt.color + ' shadow-sm font-semibold'
+                              : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Icon size={12} />
+                          <span className="text-[11px] truncate">{opt.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="py-1.5 px-3 rounded-xl bg-slate-950/40 border border-slate-900 flex items-center justify-center gap-1.5 text-xs text-slate-500 font-medium">
+                    <Lock size={12} />
+                    <span>Marking unlocks at {time12}</span>
+                  </div>
+                )}
               </div>
             </div>
           );

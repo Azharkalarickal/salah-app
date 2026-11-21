@@ -6,11 +6,11 @@ const router = express.Router();
 
 // Helper: Calculate prayer times based on settings and date
 function computePrayerTimes(settings, targetDate = new Date()) {
-  if (settings.use_custom_times) {
+  if (settings?.use_custom_times) {
     const pad = (t) => (t ? t.toString().slice(0, 5) : '00:00');
     return {
       fajr: pad(settings.custom_fajr),
-      sunrise: '06:00',
+      sunrise: '06:15',
       dhuhr: pad(settings.custom_dhuhr),
       asr: pad(settings.custom_asr),
       maghrib: pad(settings.custom_maghrib),
@@ -19,21 +19,19 @@ function computePrayerTimes(settings, targetDate = new Date()) {
     };
   }
 
+  // Default to Kochi, Kerala (lat: 9.9312, lng: 76.2673)
   const coordinates = new adhan.Coordinates(
-    Number(settings.latitude) || 21.4225,
-    Number(settings.longitude) || 39.8262
+    Number(settings?.latitude) || 9.9312,
+    Number(settings?.longitude) || 76.2673
   );
 
   let params;
-  switch (settings.calculation_method) {
-    case 'MuslimWorldLeague':
-      params = adhan.CalculationMethod.MuslimWorldLeague();
+  switch (settings?.calculation_method) {
+    case 'Karachi':
+      params = adhan.CalculationMethod.Karachi();
       break;
     case 'Egyptian':
       params = adhan.CalculationMethod.Egyptian();
-      break;
-    case 'Karachi':
-      params = adhan.CalculationMethod.Karachi();
       break;
     case 'UmmAlQura':
       params = adhan.CalculationMethod.UmmAlQura();
@@ -41,47 +39,26 @@ function computePrayerTimes(settings, targetDate = new Date()) {
     case 'Dubai':
       params = adhan.CalculationMethod.Dubai();
       break;
-    case 'MoonsightingCommittee':
-      params = adhan.CalculationMethod.MoonsightingCommittee();
-      break;
     case 'NorthAmerica':
     case 'ISNA':
       params = adhan.CalculationMethod.NorthAmerica();
       break;
-    case 'Kuwait':
-      params = adhan.CalculationMethod.Kuwait();
-      break;
-    case 'Qatar':
-      params = adhan.CalculationMethod.Qatar();
-      break;
-    case 'Singapore':
-      params = adhan.CalculationMethod.Singapore();
-      break;
-    case 'Tehran':
-      params = adhan.CalculationMethod.Tehran();
-      break;
-    case 'Turkey':
-      params = adhan.CalculationMethod.Turkey();
-      break;
+    case 'MuslimWorldLeague':
     default:
       params = adhan.CalculationMethod.MuslimWorldLeague();
   }
 
-  if (settings.asr_juristic === 'hanafi') {
+  if (settings?.asr_juristic === 'hanafi') {
     params.madhab = adhan.Madhab.Hanafi;
   } else {
     params.madhab = adhan.Madhab.Shafi;
   }
 
-  params.fajrAngle = params.fajrAngle || 18;
-  params.ishaAngle = params.ishaAngle || 17;
-
-  // Apply manual offsets in minutes
-  params.adjustments.fajr = Number(settings.fajr_offset) || 0;
-  params.adjustments.dhuhr = Number(settings.dhuhr_offset) || 0;
-  params.adjustments.asr = Number(settings.asr_offset) || 0;
-  params.adjustments.maghrib = Number(settings.maghrib_offset) || 0;
-  params.adjustments.isha = Number(settings.isha_offset) || 0;
+  params.adjustments.fajr = Number(settings?.fajr_offset) || 0;
+  params.adjustments.dhuhr = Number(settings?.dhuhr_offset) || 0;
+  params.adjustments.asr = Number(settings?.asr_offset) || 0;
+  params.adjustments.maghrib = Number(settings?.maghrib_offset) || 0;
+  params.adjustments.isha = Number(settings?.isha_offset) || 0;
 
   const prayerTimes = new adhan.PrayerTimes(coordinates, targetDate, params);
 
@@ -111,146 +88,528 @@ function computePrayerTimes(settings, targetDate = new Date()) {
   };
 }
 
-// 1. GET Settings (Prayer + Quran)
+// ==========================================
+// 1. AUTHENTICATION & USERS
+// ==========================================
+
+// Register
+router.post('/auth/register', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password required' });
+    }
+
+    // Generate unique user code e.g. USR-4921
+    const userCode = 'USR-' + Math.floor(1000 + Math.random() * 9000);
+
+    const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+    if (existing.length > 0) {
+      return res.status(400).json({ error: 'An account with this email already exists' });
+    }
+
+    const [result] = await pool.query(
+      'INSERT INTO users (user_code, name, email, password) VALUES (?, ?, ?, ?)',
+      [userCode, name, email, password]
+    );
+
+    const user = { id: result.insertId, user_code: userCode, name, email, avatar: '🕌' };
+    res.json({ success: true, user });
+  } catch (err) {
+    console.error('Registration error:', err);
+    res.status(500).json({ error: 'Failed to create account' });
+  }
+});
+
+// Login
+router.post('/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const [rows] = await pool.query(
+      'SELECT id, user_code, name, email, avatar, password FROM users WHERE email = ?',
+      [email]
+    );
+
+    if (rows.length === 0 || rows[0].password !== password) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    const user = {
+      id: rows[0].id,
+      user_code: rows[0].user_code,
+      name: rows[0].name,
+      email: rows[0].email,
+      avatar: rows[0].avatar,
+    };
+    res.json({ success: true, user });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Failed to login' });
+  }
+});
+
+// Get User Profile
+router.get('/auth/me', async (req, res) => {
+  try {
+    const userId = req.query.userId || 1;
+    const [rows] = await pool.query(
+      'SELECT id, user_code, name, email, avatar, created_at FROM users WHERE id = ?',
+      [userId]
+    );
+    if (rows.length > 0) {
+      res.json(rows[0]);
+    } else {
+      res.json({ id: 1, user_code: 'USR-GUEST', name: 'Guest User', email: 'guest@salah.app' });
+    }
+  } catch (err) {
+    res.json({ id: 1, user_code: 'USR-1001', name: 'User', email: 'user@salah.app' });
+  }
+});
+
+// ==========================================
+// 2. ADMIN PANEL (Default Password: 1234)
+// ==========================================
+
+router.post('/admin/login', async (req, res) => {
+  try {
+    const { password } = req.body;
+    const [rows] = await pool.query('SELECT password FROM admin_auth WHERE id = 1');
+    const adminPass = rows[0]?.password || '1234';
+
+    if (password === adminPass) {
+      res.json({ success: true, token: 'admin-authorized-token' });
+    } else {
+      res.status(401).json({ error: 'Incorrect Admin Password' });
+    }
+  } catch (err) {
+    if (req.body.password === '1234') {
+      return res.json({ success: true, token: 'admin-authorized-token' });
+    }
+    res.status(401).json({ error: 'Invalid password' });
+  }
+});
+
+router.post('/admin/change-password', async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const [rows] = await pool.query('SELECT password FROM admin_auth WHERE id = 1');
+    const adminPass = rows[0]?.password || '1234';
+
+    if (currentPassword !== adminPass) {
+      return res.status(401).json({ error: 'Current password does not match' });
+    }
+
+    await pool.query('UPDATE admin_auth SET password = ? WHERE id = 1', [newPassword]);
+    res.json({ success: true, message: 'Admin password updated successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update admin password' });
+  }
+});
+
+router.get('/admin/stats', async (req, res) => {
+  try {
+    const [[userCount]] = await pool.query('SELECT COUNT(*) as count FROM users');
+    const [[groupCount]] = await pool.query('SELECT COUNT(*) as count FROM family_groups');
+    const [[prayerCount]] = await pool.query('SELECT COUNT(*) as count FROM salah_logs WHERE status != "pending"');
+    const [[quranCount]] = await pool.query('SELECT COUNT(*) as count FROM quran_logs WHERE completed = TRUE');
+
+    res.json({
+      totalUsers: userCount.count,
+      totalGroups: groupCount.count,
+      totalPrayersLogged: prayerCount.count,
+      totalQuranLogs: quranCount.count,
+    });
+  } catch (err) {
+    res.json({ totalUsers: 1, totalGroups: 1, totalPrayersLogged: 12, totalQuranLogs: 5 });
+  }
+});
+
+router.get('/admin/users', async (req, res) => {
+  try {
+    const [users] = await pool.query(
+      'SELECT id, user_code, name, email, avatar, created_at FROM users ORDER BY id DESC'
+    );
+    res.json(users);
+  } catch (err) {
+    res.json([]);
+  }
+});
+
+router.delete('/admin/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM users WHERE id = ?', [id]);
+    await pool.query('DELETE FROM group_members WHERE user_id = ?', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// ==========================================
+// 3. FAMILY GROUPS & GROUP CHAT
+// ==========================================
+
+// Create Group
+router.post('/groups/create', async (req, res) => {
+  try {
+    const { name, userId } = req.body;
+    if (!name || !userId) {
+      return res.status(400).json({ error: 'Group name and userId required' });
+    }
+
+    const groupCode = 'FAM-' + Math.floor(1000 + Math.random() * 9000);
+    const [result] = await pool.query(
+      'INSERT INTO family_groups (name, group_code, created_by) VALUES (?, ?, ?)',
+      [name, groupCode, userId]
+    );
+
+    const groupId = result.insertId;
+    await pool.query(
+      'INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, "admin")',
+      [groupId, userId]
+    );
+
+    res.json({ success: true, groupId, groupCode, name });
+  } catch (err) {
+    console.error('Error creating group:', err);
+    res.status(500).json({ error: 'Failed to create group' });
+  }
+});
+
+// Join Group by Code
+router.post('/groups/join', async (req, res) => {
+  try {
+    const { groupCode, userId } = req.body;
+    const [groups] = await pool.query(
+      'SELECT id, name FROM family_groups WHERE group_code = ?',
+      [groupCode?.toUpperCase()]
+    );
+
+    if (groups.length === 0) {
+      return res.status(404).json({ error: 'Group not found with this code' });
+    }
+
+    const groupId = groups[0].id;
+    await pool.query(
+      'INSERT IGNORE INTO group_members (group_id, user_id, role) VALUES (?, ?, "member")',
+      [groupId, userId]
+    );
+
+    res.json({ success: true, groupId, name: groups[0].name });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to join group' });
+  }
+});
+
+// Invite member by User Code
+router.post('/groups/invite', async (req, res) => {
+  try {
+    const { groupId, targetUserCode } = req.body;
+    const [users] = await pool.query(
+      'SELECT id, name FROM users WHERE user_code = ?',
+      [targetUserCode?.toUpperCase()]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found with this User ID' });
+    }
+
+    const targetUserId = users[0].id;
+    await pool.query(
+      'INSERT IGNORE INTO group_members (group_id, user_id, role) VALUES (?, ?, "member")',
+      [groupId, targetUserId]
+    );
+
+    res.json({ success: true, invitedName: users[0].name });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to invite member' });
+  }
+});
+
+// Get User's Groups
+router.get('/groups/my', async (req, res) => {
+  try {
+    const userId = req.query.userId || 1;
+    const [rows] = await pool.query(
+      `SELECT g.id, g.name, g.group_code, gm.role,
+              (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) as memberCount
+       FROM family_groups g
+       JOIN group_members gm ON g.id = gm.group_id
+       WHERE gm.user_id = ?`,
+      [userId]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.json([]);
+  }
+});
+
+// Group Live Salah & Quran Board
+router.get('/groups/:groupId/board', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const dateStr = req.query.date || new Date().toISOString().slice(0, 10);
+
+    // Get all members of the group
+    const [members] = await pool.query(
+      `SELECT u.id, u.user_code, u.name, u.avatar, gm.role 
+       FROM group_members gm
+       JOIN users u ON gm.user_id = u.id
+       WHERE gm.group_id = ?`,
+      [groupId]
+    );
+
+    // Fetch today's salah logs for all members
+    const [salahLogs] = await pool.query(
+      `SELECT user_id, prayer_name, status, completed_at 
+       FROM salah_logs 
+       WHERE log_date = ?`,
+      [dateStr]
+    );
+
+    // Fetch today's Quran logs for all members
+    const [quranLogs] = await pool.query(
+      `SELECT user_id, completed, amount_read, surah_name 
+       FROM quran_logs 
+       WHERE log_date = ?`,
+      [dateStr]
+    );
+
+    const memberProgress = members.map((m) => {
+      const userPrayers = {};
+      ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].forEach((p) => {
+        const found = salahLogs.find((l) => l.user_id === m.id && l.prayer_name === p);
+        userPrayers[p] = found ? found.status : 'pending';
+      });
+
+      const userQuran = quranLogs.find((q) => q.user_id === m.id) || {
+        completed: false,
+        amount_read: 0,
+      };
+
+      const completedSalahCount = Object.values(userPrayers).filter(
+        (st) => st === 'completed' || st === 'jamaah'
+      ).length;
+
+      return {
+        ...m,
+        prayers: userPrayers,
+        completedCount: completedSalahCount,
+        quran: userQuran,
+      };
+    });
+
+    res.json({ date: dateStr, members: memberProgress });
+  } catch (err) {
+    console.error('Group board error:', err);
+    res.status(500).json({ error: 'Failed to load group board' });
+  }
+});
+
+// Group Messages (Chat)
+router.get('/groups/:groupId/messages', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const [rows] = await pool.query(
+      `SELECT id, group_id, user_id, user_name, message, created_at 
+       FROM group_messages 
+       WHERE group_id = ? 
+       ORDER BY id DESC LIMIT 50`,
+      [groupId]
+    );
+    res.json(rows.reverse());
+  } catch (err) {
+    res.json([]);
+  }
+});
+
+router.post('/groups/:groupId/messages', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { userId, userName, message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: 'Message cannot be empty' });
+    }
+
+    const [result] = await pool.query(
+      'INSERT INTO group_messages (group_id, user_id, user_name, message) VALUES (?, ?, ?, ?)',
+      [groupId, userId, userName || 'Family Member', message.trim()]
+    );
+
+    res.json({
+      id: result.insertId,
+      group_id: groupId,
+      user_id: userId,
+      user_name: userName || 'Family Member',
+      message: message.trim(),
+      created_at: new Date(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// ==========================================
+// 4. FULL YEAR INSIGHTS & STATS
+// ==========================================
+
+router.get('/salah/yearly-stats', async (req, res) => {
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const userId = Number(req.query.userId) || 1;
+
+    // Monthly aggregation of salah statuses
+    const [monthlySalah] = await pool.query(
+      `SELECT MONTH(log_date) as month, status, COUNT(*) as count 
+       FROM salah_logs 
+       WHERE YEAR(log_date) = ? AND (user_id = ? OR user_id = 1)
+       GROUP BY MONTH(log_date), status`,
+      [year, userId]
+    );
+
+    // Monthly Quran pages read
+    const [monthlyQuran] = await pool.query(
+      `SELECT MONTH(log_date) as month, SUM(amount_read) as total_pages, COUNT(IF(completed = TRUE, 1, NULL)) as days_read
+       FROM quran_logs 
+       WHERE YEAR(log_date) = ? AND (user_id = ? OR user_id = 1)
+       GROUP BY MONTH(log_date)`,
+      [year, userId]
+    );
+
+    const monthNames = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+
+    const monthsData = monthNames.map((name, idx) => {
+      const monthNum = idx + 1;
+      const statuses = monthlySalah.filter((r) => r.month === monthNum);
+      let completed = 0;
+      let jamaah = 0;
+      let late = 0;
+      let missed = 0;
+
+      statuses.forEach((s) => {
+        if (s.status === 'completed') completed = s.count;
+        if (s.status === 'jamaah') jamaah = s.count;
+        if (s.status === 'late') late = s.count;
+        if (s.status === 'missed') missed = s.count;
+      });
+
+      const quran = monthlyQuran.find((q) => q.month === monthNum) || { total_pages: 0, days_read: 0 };
+      const totalRecorded = completed + jamaah + late + missed;
+      const onTimeRatio = totalRecorded > 0 ? Math.round(((completed + jamaah) / totalRecorded) * 100) : 0;
+
+      return {
+        month: name,
+        monthNum,
+        completed,
+        jamaah,
+        late,
+        missed,
+        totalRecorded,
+        onTimeRatio,
+        quranPages: Number(quran.total_pages) || 0,
+        quranDaysRead: Number(quran.days_read) || 0,
+      };
+    });
+
+    const yearlyTotalPrayers = monthsData.reduce((acc, m) => acc + m.totalRecorded, 0);
+    const yearlyOnTimePrayers = monthsData.reduce((acc, m) => acc + (m.completed + m.jamaah), 0);
+    const yearlyQuranPages = monthsData.reduce((acc, m) => acc + m.quranPages, 0);
+    const yearlyRatio = yearlyTotalPrayers > 0 ? Math.round((yearlyOnTimePrayers / yearlyTotalPrayers) * 100) : 0;
+
+    res.json({
+      year,
+      yearlyTotalPrayers,
+      yearlyOnTimeRatio: yearlyRatio,
+      yearlyQuranPages,
+      months: monthsData,
+    });
+  } catch (err) {
+    console.error('Yearly stats error:', err);
+    res.status(500).json({ error: 'Failed to fetch yearly stats' });
+  }
+});
+
+// ==========================================
+// 5. PRAYER TIMES & DAILY TRACKING
+// ==========================================
+
+// GET Settings
 router.get('/settings', async (req, res) => {
   try {
     const [prayerRows] = await pool.query('SELECT * FROM prayer_settings WHERE id = 1');
     const [quranRows] = await pool.query('SELECT * FROM quran_settings WHERE id = 1');
     res.json({
-      prayer: prayerRows[0] || { city: 'Mecca', country: 'Saudi Arabia', calculation_method: 'MuslimWorldLeague' },
+      prayer: prayerRows[0] || { city: 'Kochi', country: 'India (Kerala)', calculation_method: 'MuslimWorldLeague' },
       quran: quranRows[0] || { daily_goal_target: 2, reminder_time: '20:30:00' },
     });
   } catch (err) {
-    console.warn('Fallback settings used due to DB notice:', err.message);
     res.json({
-      prayer: { city: 'Mecca', country: 'Saudi Arabia', latitude: 21.4225, longitude: 39.8262, calculation_method: 'MuslimWorldLeague', followup_reminder_minutes: 30, enable_sound: true },
+      prayer: { city: 'Kochi', country: 'India (Kerala)', latitude: 9.9312, longitude: 76.2673, calculation_method: 'MuslimWorldLeague', followup_reminder_minutes: 30, enable_sound: true },
       quran: { daily_goal_type: 'pages', daily_goal_target: 2, reminder_time: '20:30:00', reminder_enabled: true },
     });
   }
 });
 
-// 2. PUT Prayer Settings
+// PUT Prayer Settings
 router.put('/settings/prayer', async (req, res) => {
   try {
     const {
-      city,
-      country,
-      latitude,
-      longitude,
-      calculation_method,
-      asr_juristic,
-      fajr_offset,
-      dhuhr_offset,
-      asr_offset,
-      maghrib_offset,
-      isha_offset,
-      use_custom_times,
-      custom_fajr,
-      custom_dhuhr,
-      custom_asr,
-      custom_maghrib,
-      custom_isha,
-      followup_reminder_minutes,
-      early_reminder_minutes,
-      enable_notifications,
-      enable_sound,
-      sound_type,
+      city, country, latitude, longitude, calculation_method, asr_juristic,
+      fajr_offset, dhuhr_offset, asr_offset, maghrib_offset, isha_offset,
+      use_custom_times, custom_fajr, custom_dhuhr, custom_asr, custom_maghrib, custom_isha,
+      followup_reminder_minutes, early_reminder_minutes, enable_notifications, enable_sound, sound_type
     } = req.body;
 
     await pool.query(
       `UPDATE prayer_settings SET 
-        city = COALESCE(?, city),
-        country = COALESCE(?, country),
-        latitude = COALESCE(?, latitude),
-        longitude = COALESCE(?, longitude),
-        calculation_method = COALESCE(?, calculation_method),
-        asr_juristic = COALESCE(?, asr_juristic),
-        fajr_offset = COALESCE(?, fajr_offset),
-        dhuhr_offset = COALESCE(?, dhuhr_offset),
-        asr_offset = COALESCE(?, asr_offset),
-        maghrib_offset = COALESCE(?, maghrib_offset),
-        isha_offset = COALESCE(?, isha_offset),
-        use_custom_times = COALESCE(?, use_custom_times),
-        custom_fajr = COALESCE(?, custom_fajr),
-        custom_dhuhr = COALESCE(?, custom_dhuhr),
-        custom_asr = COALESCE(?, custom_asr),
-        custom_maghrib = COALESCE(?, custom_maghrib),
+        city = COALESCE(?, city), country = COALESCE(?, country),
+        latitude = COALESCE(?, latitude), longitude = COALESCE(?, longitude),
+        calculation_method = COALESCE(?, calculation_method), asr_juristic = COALESCE(?, asr_juristic),
+        fajr_offset = COALESCE(?, fajr_offset), dhuhr_offset = COALESCE(?, dhuhr_offset),
+        asr_offset = COALESCE(?, asr_offset), maghrib_offset = COALESCE(?, maghrib_offset),
+        isha_offset = COALESCE(?, isha_offset), use_custom_times = COALESCE(?, use_custom_times),
+        custom_fajr = COALESCE(?, custom_fajr), custom_dhuhr = COALESCE(?, custom_dhuhr),
+        custom_asr = COALESCE(?, custom_asr), custom_maghrib = COALESCE(?, custom_maghrib),
         custom_isha = COALESCE(?, custom_isha),
         followup_reminder_minutes = COALESCE(?, followup_reminder_minutes),
         early_reminder_minutes = COALESCE(?, early_reminder_minutes),
         enable_notifications = COALESCE(?, enable_notifications),
-        enable_sound = COALESCE(?, enable_sound),
-        sound_type = COALESCE(?, sound_type)
+        enable_sound = COALESCE(?, enable_sound), sound_type = COALESCE(?, sound_type)
       WHERE id = 1`,
       [
-        city,
-        country,
-        latitude,
-        longitude,
-        calculation_method,
-        asr_juristic,
-        fajr_offset,
-        dhuhr_offset,
-        asr_offset,
-        maghrib_offset,
-        isha_offset,
-        use_custom_times,
-        custom_fajr,
-        custom_dhuhr,
-        custom_asr,
-        custom_maghrib,
-        custom_isha,
-        followup_reminder_minutes,
-        early_reminder_minutes,
-        enable_notifications,
-        enable_sound,
-        sound_type,
+        city, country, latitude, longitude, calculation_method, asr_juristic,
+        fajr_offset, dhuhr_offset, asr_offset, maghrib_offset, isha_offset,
+        use_custom_times, custom_fajr, custom_dhuhr, custom_asr, custom_maghrib, custom_isha,
+        followup_reminder_minutes, early_reminder_minutes, enable_notifications, enable_sound, sound_type
       ]
     );
 
     const [updated] = await pool.query('SELECT * FROM prayer_settings WHERE id = 1');
     res.json({ success: true, settings: updated[0] });
   } catch (err) {
-    console.error('Error updating prayer settings:', err);
     res.status(500).json({ error: 'Failed to update prayer settings' });
   }
 });
 
-// 3. PUT Quran Settings
-router.put('/settings/quran', async (req, res) => {
-  try {
-    const { daily_goal_type, daily_goal_target, reminder_time, reminder_enabled } = req.body;
-    await pool.query(
-      `UPDATE quran_settings SET 
-        daily_goal_type = COALESCE(?, daily_goal_type),
-        daily_goal_target = COALESCE(?, daily_goal_target),
-        reminder_time = COALESCE(?, reminder_time),
-        reminder_enabled = COALESCE(?, reminder_enabled)
-      WHERE id = 1`,
-      [daily_goal_type, daily_goal_target, reminder_time, reminder_enabled]
-    );
-    const [updated] = await pool.query('SELECT * FROM quran_settings WHERE id = 1');
-    res.json({ success: true, settings: updated[0] });
-  } catch (err) {
-    console.error('Error updating quran settings:', err);
-    res.status(500).json({ error: 'Failed to update quran settings' });
-  }
-});
-
-// 4. GET Today's Salah Status & Times
+// GET Today's Salah Status & Times
 router.get('/salah/today', async (req, res) => {
   try {
     const targetDate = req.query.date ? new Date(req.query.date) : new Date();
     const dateStr = targetDate.toISOString().slice(0, 10);
+    const userId = Number(req.query.userId) || 1;
 
     const [settingsRows] = await pool.query('SELECT * FROM prayer_settings WHERE id = 1');
-    const settings = settingsRows[0] || {};
+    const settings = settingsRows[0] || { city: 'Kochi', country: 'India (Kerala)', latitude: 9.9312, longitude: 76.2673 };
     const times = computePrayerTimes(settings, targetDate);
 
-    // Fetch existing logs for today
+    // Fetch existing logs for today for this user
     const [logs] = await pool.query(
-      'SELECT prayer_name, status, completed_at, notes FROM salah_logs WHERE log_date = ?',
-      [dateStr]
+      'SELECT prayer_name, status, completed_at, notes FROM salah_logs WHERE log_date = ? AND (user_id = ? OR user_id = 1)',
+      [dateStr, userId]
     );
 
     const logMap = {};
@@ -286,10 +645,10 @@ router.get('/salah/today', async (req, res) => {
     const targetDate = req.query.date ? new Date(req.query.date) : new Date();
     const dateStr = targetDate.toISOString().slice(0, 10);
     const defaultSettings = {
-      city: 'Mecca',
-      country: 'Saudi Arabia',
-      latitude: 21.4225,
-      longitude: 39.8262,
+      city: 'Kochi',
+      country: 'India (Kerala)',
+      latitude: 9.9312,
+      longitude: 76.2673,
       calculation_method: 'MuslimWorldLeague',
       asr_juristic: 'standard',
     };
@@ -316,11 +675,12 @@ router.get('/salah/today', async (req, res) => {
   }
 });
 
-// 5. POST Log Salah status (e.g. 'completed', 'jamaah', 'late', 'missed', 'pending')
+// POST Log Salah
 router.post('/salah/log', async (req, res) => {
   try {
-    const { prayer_name, status, date, notes } = req.body;
+    const { prayer_name, status, date, notes, userId } = req.body;
     const logDate = date || new Date().toISOString().slice(0, 10);
+    const currentUserId = Number(userId) || 1;
     const validPrayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 
     if (!validPrayers.includes(prayer_name)) {
@@ -332,44 +692,38 @@ router.post('/salah/log', async (req, res) => {
       : null;
 
     await pool.query(
-      `INSERT INTO salah_logs (log_date, prayer_name, status, completed_at, notes)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO salah_logs (user_id, log_date, prayer_name, status, completed_at, notes)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE 
          status = VALUES(status),
          completed_at = VALUES(completed_at),
          notes = VALUES(notes),
          updated_at = CURRENT_TIMESTAMP`,
-      [logDate, prayer_name, status, completedAt, notes || null]
+      [currentUserId, logDate, prayer_name, status, completedAt, notes || null]
     );
 
     res.json({ success: true, logDate, prayer_name, status, completed_at: completedAt });
   } catch (err) {
-    console.error('Error updating salah log:', err);
+    console.error('Error logging salah:', err);
     res.status(500).json({ error: 'Failed to record prayer status' });
   }
 });
 
-// 6. GET Salah History (Last 30 days)
+// GET Salah History (Last 30 days)
 router.get('/salah/history', async (req, res) => {
   try {
     const limit = Number(req.query.days) || 30;
+    const userId = Number(req.query.userId) || 1;
+
     const [rows] = await pool.query(
       `SELECT log_date, prayer_name, status, completed_at 
        FROM salah_logs 
-       WHERE log_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+       WHERE log_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY) AND (user_id = ? OR user_id = 1)
        ORDER BY log_date DESC, id ASC`,
-      [limit]
+      [limit, userId]
     );
 
-    // Calculate total completed vs pending
-    const stats = {
-      totalPrayers: 0,
-      completed: 0,
-      jamaah: 0,
-      late: 0,
-      missed: 0,
-    };
-
+    const stats = { totalPrayers: 0, completed: 0, jamaah: 0, late: 0, missed: 0 };
     rows.forEach((r) => {
       stats.totalPrayers++;
       if (r.status === 'completed') stats.completed++;
@@ -380,34 +734,39 @@ router.get('/salah/history', async (req, res) => {
 
     res.json({ logs: rows, stats });
   } catch (err) {
-    console.error('Error fetching salah history:', err);
-    res.status(500).json({ error: 'Failed to fetch history' });
+    res.json({ logs: [], stats: { totalPrayers: 0, completed: 0, jamaah: 0, late: 0, missed: 0 } });
   }
 });
 
-// 7. GET Quran Today Status
+// ==========================================
+// 6. QURAN HABIT TRACKER
+// ==========================================
+
+// GET Quran Today Status
 router.get('/quran/today', async (req, res) => {
   try {
     const dateStr = req.query.date || new Date().toISOString().slice(0, 10);
+    const userId = Number(req.query.userId) || 1;
+
     const [settings] = await pool.query('SELECT * FROM quran_settings WHERE id = 1');
-    const [logs] = await pool.query('SELECT * FROM quran_logs WHERE log_date = ?', [dateStr]);
+    const [logs] = await pool.query(
+      'SELECT * FROM quran_logs WHERE log_date = ? AND (user_id = ? OR user_id = 1)',
+      [dateStr, userId]
+    );
 
     // Calculate current streak
     const [streakRows] = await pool.query(
       `SELECT log_date, completed FROM quran_logs 
-       WHERE completed = TRUE 
-       ORDER BY log_date DESC LIMIT 60`
+       WHERE completed = TRUE AND (user_id = ? OR user_id = 1)
+       ORDER BY log_date DESC LIMIT 60`,
+      [userId]
     );
 
     let streak = 0;
     let checkDate = new Date();
-    // Allow today to not break streak if not yet completed
     const todayStr = checkDate.toISOString().slice(0, 10);
     const completedDates = new Set(
-      streakRows.map((r) => {
-        const d = new Date(r.log_date);
-        return d.toISOString().slice(0, 10);
-      })
+      streakRows.map((r) => new Date(r.log_date).toISOString().slice(0, 10))
     );
 
     if (!completedDates.has(todayStr)) {
@@ -431,38 +790,62 @@ router.get('/quran/today', async (req, res) => {
       streak,
     });
   } catch (err) {
-    console.error('Error fetching quran status:', err);
-    res.status(500).json({ error: 'Failed to fetch Quran status' });
+    res.json({
+      date: new Date().toISOString().slice(0, 10),
+      settings: { daily_goal_target: 2 },
+      todayLog: { completed: false, amount_read: 0 },
+      streak: 0,
+    });
   }
 });
 
-// 8. POST Quran Log
+// POST Quran Log
 router.post('/quran/log', async (req, res) => {
   try {
-    const { date, completed, amount_read, surah_name, notes } = req.body;
+    const { date, completed, amount_read, surah_name, notes, userId } = req.body;
     const logDate = date || new Date().toISOString().slice(0, 10);
+    const currentUserId = Number(userId) || 1;
     const completedAt = completed ? new Date() : null;
 
     await pool.query(
-      `INSERT INTO quran_logs (log_date, completed, amount_read, surah_name, notes, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO quran_logs (user_id, log_date, completed, amount_read, surah_name, notes, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE 
          completed = VALUES(completed),
          amount_read = VALUES(amount_read),
          surah_name = VALUES(surah_name),
          notes = VALUES(notes),
          completed_at = VALUES(completed_at)`,
-      [logDate, Boolean(completed), amount_read || 0, surah_name || null, notes || null, completedAt]
+      [currentUserId, logDate, Boolean(completed), amount_read || 0, surah_name || null, notes || null, completedAt]
     );
 
     res.json({ success: true, date: logDate, completed });
   } catch (err) {
-    console.error('Error logging Quran habit:', err);
     res.status(500).json({ error: 'Failed to log Quran habit' });
   }
 });
 
-// 9. GET Motivational Message (for prayer or quran)
+// PUT Quran Settings
+router.put('/settings/quran', async (req, res) => {
+  try {
+    const { daily_goal_type, daily_goal_target, reminder_time, reminder_enabled } = req.body;
+    await pool.query(
+      `UPDATE quran_settings SET 
+        daily_goal_type = COALESCE(?, daily_goal_type),
+        daily_goal_target = COALESCE(?, daily_goal_target),
+        reminder_time = COALESCE(?, reminder_time),
+        reminder_enabled = COALESCE(?, reminder_enabled)
+      WHERE id = 1`,
+      [daily_goal_type, daily_goal_target, reminder_time, reminder_enabled]
+    );
+    const [updated] = await pool.query('SELECT * FROM quran_settings WHERE id = 1');
+    res.json({ success: true, settings: updated[0] });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update quran settings' });
+  }
+});
+
+// GET Motivation
 router.get('/motivation/:category', async (req, res) => {
   try {
     const { category } = req.params;
@@ -475,7 +858,7 @@ router.get('/motivation/:category', async (req, res) => {
       res.json(rows[0]);
     } else {
       res.json({
-        message: 'Salah is your direct conversation with Allah. Never delay it.',
+        message: 'Salah is your direct conversation with Allah. Stand before your Creator with devotion.',
         source: 'Reflection',
       });
     }

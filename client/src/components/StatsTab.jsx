@@ -1,126 +1,242 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, Award, CheckCircle, Clock3, Users, AlertCircle } from 'lucide-react';
-import { fetchSalahHistory } from '../services/api';
+import {
+  BarChart3,
+  Award,
+  CheckCircle,
+  Clock3,
+  Users,
+  AlertCircle,
+  Calendar,
+  BookOpen,
+  TrendingUp,
+  Sparkles
+} from 'lucide-react';
+import { fetchSalahHistory, fetchYearlyStats } from '../services/api';
 
-export default function StatsTab() {
+export default function StatsTab({ userId }) {
+  const [viewMode, setViewMode] = useState('weekly'); // 'weekly' | 'yearly'
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [historyData, setHistoryData] = useState(null);
+  const [yearlyData, setYearlyData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchSalahHistory(7)
-      .then((data) => setHistoryData(data))
+    setLoading(true);
+    Promise.all([
+      fetchSalahHistory(7, userId),
+      fetchYearlyStats(selectedYear, userId),
+    ])
+      .then(([history, yearly]) => {
+        setHistoryData(history);
+        setYearlyData(yearly);
+      })
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
-  }, []);
+  }, [selectedYear, userId]);
 
-  const stats = historyData?.stats || { completed: 0, jamaah: 0, late: 0, missed: 0, totalPrayers: 0 };
-  const total = stats.totalPrayers || 1;
-  const onTimePercentage = Math.round(((stats.completed + stats.jamaah) / total) * 100) || 0;
+  const weeklyStats = historyData?.stats || { completed: 0, jamaah: 0, late: 0, missed: 0, totalPrayers: 0 };
+  const weeklyTotal = weeklyStats.totalPrayers || 1;
+  const weeklyOnTimeRatio = Math.round(((weeklyStats.completed + weeklyStats.jamaah) / weeklyTotal) * 100) || 0;
 
   return (
     <div className="space-y-4 pb-20">
-      {/* Header Summary Card */}
-      <div className="rounded-3xl bg-gradient-to-br from-emerald-950/80 via-slate-900 to-slate-950 border border-emerald-800/40 p-5 shadow-xl">
-        <div className="flex items-center gap-2 mb-3">
-          <Award className="text-emerald-400" size={20} />
-          <h2 className="text-base font-bold text-white">Prayer Consistency</h2>
-        </div>
+      {/* View Mode Toggle */}
+      <div className="flex items-center justify-between bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800">
+        <button
+          onClick={() => setViewMode('weekly')}
+          className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+            viewMode === 'weekly'
+              ? 'bg-emerald-500 text-slate-950 shadow-md'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <BarChart3 size={14} />
+          <span>7-Day View</span>
+        </button>
 
-        <div className="grid grid-cols-2 gap-3 mt-4">
-          <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
-            <span className="text-xs text-slate-400 block">On-Time Ratio</span>
-            <span className="text-2xl font-black text-emerald-400 font-mono">{onTimePercentage}%</span>
-          </div>
-
-          <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
-            <span className="text-xs text-slate-400 block">Recorded Prayers</span>
-            <span className="text-2xl font-black text-white font-mono">{stats.totalPrayers}</span>
-          </div>
-        </div>
+        <button
+          onClick={() => setViewMode('yearly')}
+          className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+            viewMode === 'yearly'
+              ? 'bg-emerald-500 text-slate-950 shadow-md'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Calendar size={14} />
+          <span>Full Year {selectedYear}</span>
+        </button>
       </div>
 
-      {/* Breakdown Cards */}
-      <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4 space-y-3">
-        <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-          Last 7 Days Breakdown
-        </h3>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-950/80 border border-emerald-900/30">
-            <CheckCircle size={16} className="text-emerald-400" />
-            <div>
-              <span className="text-xs text-slate-400 block">On Time</span>
-              <span className="text-base font-bold text-white">{stats.completed}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-950/80 border border-blue-900/30">
-            <Users size={16} className="text-blue-400" />
-            <div>
-              <span className="text-xs text-slate-400 block">Jama'ah</span>
-              <span className="text-base font-bold text-white">{stats.jamaah}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-950/80 border border-amber-900/30">
-            <Clock3 size={16} className="text-amber-400" />
-            <div>
-              <span className="text-xs text-slate-400 block">Late / Qadha</span>
-              <span className="text-base font-bold text-white">{stats.late}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-950/80 border border-rose-900/30">
-            <AlertCircle size={16} className="text-rose-400" />
-            <div>
-              <span className="text-xs text-slate-400 block">Missed</span>
-              <span className="text-base font-bold text-white">{stats.missed}</span>
-            </div>
-          </div>
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-16 text-slate-400 space-y-2">
+          <div className="w-7 h-7 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs">Loading analytics...</span>
         </div>
-      </div>
+      ) : viewMode === 'weekly' ? (
+        /* --- WEEKLY VIEW --- */
+        <>
+          <div className="rounded-3xl bg-gradient-to-br from-emerald-950/80 via-slate-900 to-slate-950 border border-emerald-800/40 p-5 shadow-xl">
+            <div className="flex items-center gap-2 mb-3">
+              <Award className="text-emerald-400" size={20} />
+              <h2 className="text-base font-bold text-white">7-Day Consistency</h2>
+            </div>
 
-      {/* Recent Activity Log */}
-      <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
-        <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">
-          Recent Log Entries
-        </h3>
-        {loading ? (
-          <p className="text-xs text-slate-500 py-4 text-center">Loading history...</p>
-        ) : historyData?.logs?.length === 0 ? (
-          <p className="text-xs text-slate-500 py-4 text-center">No recorded prayers yet. Mark your prayers to see them here.</p>
-        ) : (
-          <div className="divide-y divide-slate-800/60 max-h-64 overflow-y-auto">
-            {historyData.logs.slice(0, 15).map((log, idx) => {
-              const d = new Date(log.log_date).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-              });
-              return (
-                <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+                <span className="text-xs text-slate-400 block">On-Time Ratio</span>
+                <span className="text-2xl font-black text-emerald-400 font-mono">{weeklyOnTimeRatio}%</span>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+                <span className="text-xs text-slate-400 block">Recorded Prayers</span>
+                <span className="text-2xl font-black text-white font-mono">{weeklyStats.totalPrayers}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4 space-y-3">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              Status Breakdown
+            </h3>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-950/80 border border-emerald-900/30">
+                <CheckCircle size={16} className="text-emerald-400" />
+                <div>
+                  <span className="text-xs text-slate-400 block">On Time</span>
+                  <span className="text-base font-bold text-white">{weeklyStats.completed}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-950/80 border border-blue-900/30">
+                <Users size={16} className="text-blue-400" />
+                <div>
+                  <span className="text-xs text-slate-400 block">Jama'ah</span>
+                  <span className="text-base font-bold text-white">{weeklyStats.jamaah}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-950/80 border border-amber-900/30">
+                <Clock3 size={16} className="text-amber-400" />
+                <div>
+                  <span className="text-xs text-slate-400 block">Late / Qadha</span>
+                  <span className="text-base font-bold text-white">{weeklyStats.late}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-950/80 border border-rose-900/30">
+                <AlertCircle size={16} className="text-rose-400" />
+                <div>
+                  <span className="text-xs text-slate-400 block">Missed</span>
+                  <span className="text-base font-bold text-white">{weeklyStats.missed}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+        /* --- FULL YEAR VIEW --- */
+        <>
+          {/* Yearly Summary Cards */}
+          <div className="rounded-3xl bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-950 border border-emerald-800/40 p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="text-emerald-400" size={20} />
+                <h2 className="text-base font-bold text-white">Full Year {selectedYear} Insights</h2>
+              </div>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                12 Months
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 text-center">
+                <span className="text-[11px] text-slate-400 block">Annual Ratio</span>
+                <span className="text-xl font-black text-emerald-400 font-mono">
+                  {yearlyData?.yearlyOnTimeRatio || 0}%
+                </span>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 text-center">
+                <span className="text-[11px] text-slate-400 block">Total Prayers</span>
+                <span className="text-xl font-black text-white font-mono">
+                  {yearlyData?.yearlyTotalPrayers || 0}
+                </span>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 text-center">
+                <span className="text-[11px] text-slate-400 block">Quran Pages</span>
+                <span className="text-xl font-black text-teal-400 font-mono">
+                  {yearlyData?.yearlyQuranPages || 0}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* 12-Month Bar Chart */}
+          <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4 space-y-3">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+              <span>Monthly Consistency Chart</span>
+              <span className="text-[10px] text-emerald-400 font-normal">On-time %</span>
+            </h3>
+
+            {/* Vertical Bar Graph for all 12 Months */}
+            <div className="grid grid-cols-6 sm:grid-cols-12 gap-2 pt-4 pb-2 items-end h-44">
+              {yearlyData?.months?.map((m) => {
+                const ratio = m.onTimeRatio || 0;
+                return (
+                  <div key={m.month} className="flex flex-col items-center justify-end h-full gap-1">
+                    <span className="text-[9px] font-mono font-semibold text-slate-400">
+                      {ratio > 0 ? `${ratio}%` : ''}
+                    </span>
+                    <div className="w-full bg-slate-950 rounded-t-lg h-28 flex items-end overflow-hidden p-0.5 border border-slate-800">
+                      <div
+                        style={{ height: `${Math.max(8, ratio)}%` }}
+                        className={`w-full rounded-t transition-all duration-500 ${
+                          ratio >= 75
+                            ? 'bg-emerald-400'
+                            : ratio >= 50
+                            ? 'bg-teal-500'
+                            : ratio > 0
+                            ? 'bg-amber-400'
+                            : 'bg-slate-800'
+                        }`}
+                      />
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-300">{m.month}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Month by Month Detail Breakdown */}
+          <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4 space-y-2">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+              Monthly Record Breakdown
+            </h3>
+            <div className="divide-y divide-slate-800/60 max-h-60 overflow-y-auto">
+              {yearlyData?.months?.map((m) => (
+                <div key={m.month} className="py-2.5 flex items-center justify-between text-xs">
                   <div>
-                    <span className="font-bold capitalize text-slate-200">{log.prayer_name}</span>
-                    <span className="text-slate-500 ml-2">{d}</span>
+                    <span className="font-bold text-slate-200">{m.month} {selectedYear}</span>
+                    <span className="text-slate-500 ml-2">
+                      {m.totalRecorded} prayers • {m.quranPages} Quran pages
+                    </span>
                   </div>
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                      log.status === 'completed'
+                    className={`font-mono font-bold px-2 py-0.5 rounded text-[11px] ${
+                      m.onTimeRatio >= 70
                         ? 'text-emerald-400 bg-emerald-950/60'
-                        : log.status === 'jamaah'
-                        ? 'text-blue-400 bg-blue-950/60'
-                        : log.status === 'late'
+                        : m.onTimeRatio > 0
                         ? 'text-amber-400 bg-amber-950/60'
-                        : 'text-rose-400 bg-rose-950/60'
+                        : 'text-slate-500 bg-slate-900'
                     }`}
                   >
-                    {log.status}
+                    {m.onTimeRatio}%
                   </span>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
