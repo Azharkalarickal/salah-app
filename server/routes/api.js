@@ -458,6 +458,237 @@ router.post('/groups/:groupId/messages', async (req, res) => {
 });
 
 // ==========================================
+// 3.5 GROUP VOICE CALLING
+// ==========================================
+
+// Start a Group Voice Call
+router.post('/groups/:groupId/calls/start', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { userId, userName } = req.body;
+    if (!groupId || !userId) {
+      return res.status(400).json({ error: 'groupId and userId required' });
+    }
+
+    // End any previous active call for this group
+    await pool.query(
+      'UPDATE group_calls SET status = "ended", ended_at = NOW() WHERE group_id = ? AND status = "active"',
+      [groupId]
+    );
+
+    const [callResult] = await pool.query(
+      'INSERT INTO group_calls (group_id, caller_id, caller_name, status) VALUES (?, ?, ?, "active")',
+      [groupId, userId, userName || 'Family Member']
+    );
+
+    const callId = callResult.insertId;
+
+    // Caller joins as host/first participant
+    await pool.query(
+      'INSERT INTO group_call_participants (call_id, user_id, user_name, status, is_speaking) VALUES (?, ?, ?, "talking", TRUE)',
+      [callId, userId, userName || 'Family Member']
+    );
+
+    // Announce in group chat
+    await pool.query(
+      'INSERT INTO group_messages (group_id, user_id, user_name, message) VALUES (?, ?, ?, ?)',
+      [groupId, userId, userName || 'Family Member', '📞 Started a family group voice call']
+    );
+
+    res.json({
+      success: true,
+      call: {
+        id: callId,
+        group_id: Number(groupId),
+        caller_id: Number(userId),
+        caller_name: userName || 'Family Member',
+        status: 'active',
+      },
+    });
+  } catch (err) {
+    console.error('Start call error:', err);
+    res.status(500).json({ error: 'Failed to start group call' });
+  }
+});
+
+// Get Active Call in a Group with Participants
+router.get('/groups/:groupId/calls/active', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const [calls] = await pool.query(
+      'SELECT * FROM group_calls WHERE group_id = ? AND status = "active" ORDER BY id DESC LIMIT 1',
+      [groupId]
+    );
+
+    if (calls.length === 0) {
+      return res.json({ active: false, call: null, participants: [] });
+    }
+
+    const call = calls[0];
+    const [participants] = await pool.query(
+      'SELECT user_id, user_name, status, is_speaking, joined_at FROM group_call_participants WHERE call_id = ? AND status != "left"',
+      [call.id]
+    );
+
+    res.json({
+      active: true,
+      call,
+      participants,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch active call' });
+  }
+});
+
+// Join Group Call
+router.post('/groups/calls/:callId/join', async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const { userId, userName } = req.body;
+
+    await pool.query(
+      `INSERT INTO group_call_participants (call_id, user_id, user_name, status, is_speaking)
+       VALUES (?, ?, ?, "talking", FALSE)
+       ON DUPLICATE KEY UPDATE status = "talking"`,
+      [callId, userId, userName || 'Family Member']
+    );
+
+    const [participants] = await pool.query(
+      'SELECT user_id, user_name, status, is_speaking, joined_at FROM group_call_participants WHERE call_id = ? AND status != "left"',
+      [callId]
+    );
+
+    res.json({ success: true, participants });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to join group call' });
+  }
+});
+
+// Leave Group Call
+router.post('/groups/calls/:callId/leave', async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const { userId } = req.body;
+
+    await pool.query(
+      'UPDATE group_call_participants SET status = "left", is_speaking = FALSE WHERE call_id = ? AND user_id = ?',
+      [callId, userId]
+    );
+
+    // If no active participants remain, mark call as ended
+    const [remaining] = await pool.query(
+      'SELECT COUNT(*) as count FROM group_call_participants WHERE call_id = ? AND status != "left"',
+      [callId]
+    );
+
+    if (remaining[0].count === 0) {
+      await pool.query(
+        'UPDATE group_calls SET status = "ended", ended_at = NOW() WHERE id = ?',
+        [callId]
+      );
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to leave group call' });
+  }
+});
+
+// End Group Call (by host or participant)
+router.post('/groups/calls/:callId/end', async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const { groupId, userId, userName } = req.body;
+
+    await pool.query(
+      'UPDATE group_calls SET status = "ended", ended_at = NOW() WHERE id = ?',
+      [callId]
+    );
+
+    await pool.query(
+      'UPDATE group_call_participants SET status = "left", is_speaking = FALSE WHERE call_id = ?',
+      [callId]
+    );
+
+    if (groupId) {
+      await pool.query(
+        'INSERT INTO group_messages (group_id, user_id, user_name, message) VALUES (?, ?, ?, ?)',
+        [groupId, userId || 1, userName || 'System', '📞 Group voice call ended']
+      );
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to end group call' });
+  }
+});
+
+// Update Speaking/Mute Status
+router.post('/groups/calls/:callId/status', async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const { userId, isSpeaking, isMuted } = req.body;
+
+    const status = isMuted ? 'muted' : 'talking';
+    await pool.query(
+      'UPDATE group_call_participants SET is_speaking = ?, status = ? WHERE call_id = ? AND user_id = ?',
+      [Boolean(isSpeaking), status, callId, userId]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update speaking status' });
+  }
+});
+
+// Check if any group user belongs to has an active call (for incoming ringing alert)
+router.get('/groups/calls/my-incoming', async (req, res) => {
+  try {
+    const userId = Number(req.query.userId);
+    if (!userId) return res.json({ hasCall: false });
+
+    const [rows] = await pool.query(
+      `SELECT c.*, g.name as group_name
+       FROM group_calls c
+       JOIN group_members gm ON c.group_id = gm.group_id
+       JOIN family_groups g ON c.group_id = g.id
+       WHERE gm.user_id = ? AND c.status = "active"
+       ORDER BY c.id DESC LIMIT 1`,
+      [userId]
+    );
+
+    if (rows.length === 0) {
+      return res.json({ hasCall: false });
+    }
+
+    const call = rows[0];
+
+    // Check if user is already participating
+    const [myPart] = await pool.query(
+      'SELECT status FROM group_call_participants WHERE call_id = ? AND user_id = ?',
+      [call.id, userId]
+    );
+
+    const isParticipating = myPart.length > 0 && myPart[0].status === 'talking';
+    const hasDeclined = myPart.length > 0 && myPart[0].status === 'left';
+
+    const [participants] = await pool.query(
+      'SELECT user_id, user_name, status, is_speaking FROM group_call_participants WHERE call_id = ? AND status != "left"',
+      [call.id]
+    );
+
+    res.json({
+      hasCall: !hasDeclined,
+      isParticipating,
+      call,
+      participants,
+    });
+  } catch (err) {
+    res.json({ hasCall: false });
+  }
+});
+
+// ==========================================
 // 4. USER CUSTOM PRAYER / ADHAN TIMES
 // ==========================================
 

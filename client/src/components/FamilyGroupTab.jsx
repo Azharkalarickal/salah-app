@@ -13,7 +13,9 @@ import {
   LogIn,
   Image as ImageIcon,
   X,
-  Maximize2
+  Maximize2,
+  Phone,
+  PhoneCall
 } from 'lucide-react';
 import {
   fetchMyGroups,
@@ -22,11 +24,20 @@ import {
   inviteFamilyMember,
   fetchGroupBoard,
   fetchGroupMessages,
-  sendGroupMessage
+  sendGroupMessage,
+  startGroupCall,
+  fetchActiveGroupCall,
+  joinGroupCall
 } from '../services/api';
 import { showNotification, playBellRing } from '../utils/notifications';
 
-export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
+export default function FamilyGroupTab({
+  currentUser,
+  onOpenAuth,
+  onStartCall,
+  onJoinCall,
+  activeGroupCall
+}) {
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [activeSubTab, setActiveSubTab] = useState('board'); // 'board' | 'chat'
@@ -36,6 +47,7 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [viewingPhoto, setViewingPhoto] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [groupActiveCall, setGroupActiveCall] = useState(null);
 
   // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -105,12 +117,14 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
   const loadGroupBoardAndChat = async (groupId) => {
     setLoading(true);
     try {
-      const [board, msgs] = await Promise.all([
+      const [board, msgs, activeCall] = await Promise.all([
         fetchGroupBoard(groupId),
         fetchGroupMessages(groupId),
+        fetchActiveGroupCall(groupId).catch(() => ({ active: false })),
       ]);
       setBoardData(board);
       setMessages(msgs);
+      setGroupActiveCall(activeCall?.active ? activeCall : null);
       // Mark current messages as notified
       msgs.forEach((m) => notifiedMessageIdsRef.current.add(m.id));
     } catch (err) {
@@ -122,7 +136,11 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
 
   const pollGroupMessages = async (groupId) => {
     try {
-      const msgs = await fetchGroupMessages(groupId);
+      const [msgs, activeCall] = await Promise.all([
+        fetchGroupMessages(groupId),
+        fetchActiveGroupCall(groupId).catch(() => ({ active: false })),
+      ]);
+      setGroupActiveCall(activeCall?.active ? activeCall : null);
       if (msgs && msgs.length > 0) {
         // Check for new messages from other family members
         msgs.forEach((m) => {
@@ -142,6 +160,48 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
         setMessages(msgs);
       }
     } catch (e) {}
+  };
+
+  const handleStartCall = async () => {
+    if (!selectedGroup || !currentUser?.id) return;
+    try {
+      const res = await startGroupCall({
+        groupId: selectedGroup.id,
+        userId: currentUser.id,
+        userName: currentUser.name || 'Family Member',
+      });
+      if (res?.call) {
+        onStartCall?.({
+          ...res.call,
+          group_name: selectedGroup.name,
+        });
+        // Refresh active call
+        setGroupActiveCall({
+          active: true,
+          call: res.call,
+          participants: [{ user_id: currentUser.id, user_name: currentUser.name, status: 'talking' }],
+        });
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to start group call');
+    }
+  };
+
+  const handleJoinCall = async () => {
+    if (!groupActiveCall?.call || !currentUser?.id) return;
+    try {
+      await joinGroupCall({
+        callId: groupActiveCall.call.id,
+        userId: currentUser.id,
+        userName: currentUser.name || 'Family Member',
+      });
+      onJoinCall?.({
+        ...groupActiveCall.call,
+        group_name: selectedGroup.name,
+      });
+    } catch (err) {
+      alert(err.message || 'Failed to join group call');
+    }
   };
 
   const handleCreateGroup = async (e) => {
@@ -358,7 +418,7 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
         </div>
       ) : selectedGroup ? (
         <>
-          {/* Active Group Header with Invite Button */}
+          {/* Active Group Header with Call & Invite Buttons */}
           <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-900/90 border border-slate-800">
             <div>
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -372,14 +432,58 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
               </span>
             </div>
 
-            <button
-              onClick={() => setShowInviteModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/60 rounded-xl text-xs font-semibold active:scale-95 transition"
-            >
-              <UserPlus size={13} />
-              <span>Invite by ID</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleStartCall}
+                title="Start a phone call in this group"
+                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-emerald-700/30 active:scale-95 transition cursor-pointer"
+              >
+                <Phone size={13} className="text-emerald-100" />
+                <span>Call</span>
+              </button>
+
+              <button
+                onClick={() => setShowInviteModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold active:scale-95 transition cursor-pointer"
+              >
+                <UserPlus size={13} className="text-emerald-400" />
+                <span>Invite</span>
+              </button>
+            </div>
           </div>
+
+          {/* Active Call Banner (if ongoing call in this group) */}
+          {groupActiveCall?.active && groupActiveCall.call && (
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-slate-900 to-teal-950/90 border border-emerald-500/50 shadow-lg flex items-center justify-between animate-pulse-subtle">
+              <div className="flex items-center gap-2.5">
+                <div className="relative">
+                  <span className="absolute -inset-0.5 rounded-full bg-emerald-400 animate-ping opacity-75"></span>
+                  <div className="relative w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-slate-950 font-bold">
+                    <PhoneCall size={15} />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>Active Voice Call</span>
+                    <span className="text-[10px] text-emerald-300 font-mono bg-emerald-900/60 px-1.5 py-0.2 rounded border border-emerald-700/50">
+                      {groupActiveCall.participants?.length || 1} in call
+                    </span>
+                  </p>
+                  <p className="text-[11px] text-slate-300">
+                    Started by {groupActiveCall.call.caller_name || 'Family member'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleJoinCall}
+                className="px-3.5 py-1.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-xl text-xs font-bold shadow-md active:scale-95 transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <PhoneCall size={13} />
+                <span>Join</span>
+              </button>
+            </div>
+          )}
 
           {/* Subtabs: Prayer Board vs Chat */}
           <div className="flex items-center bg-slate-900/60 p-1 rounded-2xl border border-slate-800">

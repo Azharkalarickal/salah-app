@@ -138,6 +138,70 @@ export async function sendGroupMessage({ groupId, userId, userName, message, ima
   return data;
 }
 
+// --- GROUP VOICE CALLING ---
+export async function startGroupCall({ groupId, userId, userName }) {
+  const res = await fetch(`${BASE_URL}/groups/${groupId}/calls/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, userName }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to start group call');
+  return data;
+}
+
+export async function fetchActiveGroupCall(groupId) {
+  const res = await fetch(`${BASE_URL}/groups/${groupId}/calls/active`);
+  if (!res.ok) throw new Error('Failed to fetch active call');
+  return res.json();
+}
+
+export async function joinGroupCall({ callId, userId, userName }) {
+  const res = await fetch(`${BASE_URL}/groups/calls/${callId}/join`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, userName }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to join call');
+  return data;
+}
+
+export async function leaveGroupCall({ callId, userId }) {
+  const res = await fetch(`${BASE_URL}/groups/calls/${callId}/leave`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId }),
+  });
+  return res.json();
+}
+
+export async function endGroupCall({ callId, groupId, userId, userName }) {
+  const res = await fetch(`${BASE_URL}/groups/calls/${callId}/end`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ groupId, userId, userName }),
+  });
+  return res.json();
+}
+
+export async function updateCallSpeakingStatus({ callId, userId, isSpeaking, isMuted }) {
+  const res = await fetch(`${BASE_URL}/groups/calls/${callId}/status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, isSpeaking, isMuted }),
+  });
+  return res.json();
+}
+
+export async function fetchMyIncomingGroupCall(userId) {
+  try {
+    const res = await fetch(`${BASE_URL}/groups/calls/my-incoming?userId=${userId || 1}`);
+    if (res.ok) return res.json();
+  } catch (e) {}
+  return { hasCall: false };
+}
+
 // --- USER CUSTOM ADHAN TIMES ---
 export async function fetchUserCustomTimes(userId) {
   const res = await fetch(`${BASE_URL}/salah/custom-times?userId=${userId || 1}`);

@@ -204,6 +204,32 @@ export async function initializeDatabase() {
       await conn.query('ALTER TABLE admin_announcements ADD COLUMN expires_at DATETIME NULL');
     } catch (e) {}
 
+    // 12. Group Voice Calling Tables
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS group_calls (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        group_id INT NOT NULL,
+        caller_id INT NOT NULL,
+        caller_name VARCHAR(100) NOT NULL,
+        status ENUM('active', 'ended') DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ended_at TIMESTAMP NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS group_call_participants (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        call_id INT NOT NULL,
+        user_id INT NOT NULL,
+        user_name VARCHAR(100) NOT NULL,
+        status ENUM('talking', 'muted', 'left') DEFAULT 'talking',
+        is_speaking BOOLEAN DEFAULT FALSE,
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_call_user (call_id, user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
     // Seed Malayalam Hadiths & Quran quotes if table is empty
     const [msgCount] = await conn.query('SELECT COUNT(*) as count FROM motivational_messages');
     if (msgCount[0].count === 0) {

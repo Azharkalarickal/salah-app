@@ -13,6 +13,8 @@ import AuthModal from './components/AuthModal';
 import AdminModal from './components/AdminModal';
 import FamilyGroupTab from './components/FamilyGroupTab';
 import EditPrayerTimesModal from './components/EditPrayerTimesModal';
+import IncomingGroupCallModal from './components/IncomingGroupCallModal';
+import GroupCallModal from './components/GroupCallModal';
 
 import {
   fetchTodaySalah,
@@ -29,6 +31,9 @@ import {
   sendGroupMessage,
   saveUserCustomTimes,
   fetchLatestBroadcast,
+  fetchMyIncomingGroupCall,
+  joinGroupCall,
+  leaveGroupCall,
 } from './services/api';
 import {
   requestNotificationPermission,
@@ -70,6 +75,11 @@ export default function App() {
   const [chatQuickReplyData, setChatQuickReplyData] = useState(null);
   const [chatReplyText, setChatReplyText] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
+
+  // Group Voice Calling State
+  const [activeGroupCall, setActiveGroupCall] = useState(null);
+  const [incomingGroupCall, setIncomingGroupCall] = useState(null);
+  const declinedCallIdsRef = useRef(new Set());
 
   // Keep track of sent notifications (prevent repeats)
   const sentAlertsRef = useRef(new Set());
@@ -353,6 +363,57 @@ export default function App() {
     } finally {
       setSendingReply(false);
     }
+  };
+
+  // Group Voice Calling: Incoming Call Detection Engine
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    const pollIncomingCalls = async () => {
+      try {
+        const res = await fetchMyIncomingGroupCall(currentUser.id);
+        if (res && res.hasCall && res.call) {
+          const call = res.call;
+          // If caller is current user, they initiated it (already connected)
+          if (
+            Number(call.caller_id) !== Number(currentUser.id) &&
+            !activeGroupCall &&
+            !declinedCallIdsRef.current.has(call.id)
+          ) {
+            setIncomingGroupCall(call);
+          }
+        } else if (incomingGroupCall) {
+          setIncomingGroupCall(null);
+        }
+      } catch (e) {}
+    };
+
+    pollIncomingCalls();
+    const callInterval = setInterval(pollIncomingCalls, 3500);
+    return () => clearInterval(callInterval);
+  }, [currentUser, activeGroupCall, incomingGroupCall]);
+
+  const handleAcceptIncomingCall = async (call) => {
+    try {
+      await joinGroupCall({
+        callId: call.id,
+        userId: currentUser.id,
+        userName: currentUser.name || 'Family Member',
+      });
+      setActiveGroupCall(call);
+    } catch (err) {
+      console.error('Failed to accept group call:', err);
+    } finally {
+      setIncomingGroupCall(null);
+    }
+  };
+
+  const handleDeclineIncomingCall = async (call) => {
+    declinedCallIdsRef.current.add(call.id);
+    try {
+      await leaveGroupCall({ callId: call.id, userId: currentUser.id });
+    } catch (e) {}
+    setIncomingGroupCall(null);
   };
 
   // Hourly Salah, Time & Akhirah Reminder Engine (User can enable or disable)
@@ -640,6 +701,9 @@ export default function App() {
               <FamilyGroupTab
                 currentUser={currentUser}
                 onOpenAuth={() => setShowAuthModal(true)}
+                onStartCall={(call) => setActiveGroupCall(call)}
+                onJoinCall={(call) => setActiveGroupCall(call)}
+                activeGroupCall={activeGroupCall}
               />
             )}
 
@@ -720,6 +784,25 @@ export default function App() {
         userId={currentUser?.id || 1}
         onSaveCustomTimes={handleSaveCustomTimes}
       />
+
+      {/* Incoming Group Call Popup (rings like actual smartphone incoming call) */}
+      {incomingGroupCall && (
+        <IncomingGroupCallModal
+          incomingCall={incomingGroupCall}
+          onAccept={handleAcceptIncomingCall}
+          onDecline={handleDeclineIncomingCall}
+        />
+      )}
+
+      {/* Active Group Call Voice Room */}
+      {activeGroupCall && (
+        <GroupCallModal
+          call={activeGroupCall}
+          currentUser={currentUser}
+          onClose={() => setActiveGroupCall(null)}
+          onCallEnded={() => setActiveGroupCall(null)}
+        />
+      )}
     </div>
   );
 }
