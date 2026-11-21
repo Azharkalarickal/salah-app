@@ -3,8 +3,15 @@ import pool from './db.js';
 export async function initializeDatabase() {
   let conn;
   try {
-    console.log('🔄 Checking MySQL database connection...');
-    conn = await pool.getConnection();
+    console.log('🔄 Checking MySQL database connection (with 5s timeout)...');
+    
+    // Timeout wrapper to guarantee it never hangs startup
+    const connectionPromise = pool.getConnection();
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Connection timed out after 5000ms')), 5000)
+    );
+
+    conn = await Promise.race([connectionPromise, timeoutPromise]);
     console.log('✅ Connected to MySQL database, ensuring tables exist...');
 
     // 1. Prayer Settings Table
@@ -120,8 +127,11 @@ export async function initializeDatabase() {
 
     console.log('✅ Database schema verified and ready!');
   } catch (err) {
-    console.warn('⚠️ Database initialization notice (using fallback if unavailable):', err.message);
+    console.warn('⚠️ Database notice (App will run with built-in calculations):', err.message);
+    console.warn('Tip: If using Hostinger, ensure Remote MySQL allows % (Any Host).');
   } finally {
-    if (conn) conn.release();
+    if (conn) {
+      try { conn.release(); } catch (e) {}
+    }
   }
 }

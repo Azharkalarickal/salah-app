@@ -9,19 +9,11 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD || 'mydaY@1997',
   database: process.env.DB_NAME || 'u918480384_salah',
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: 5,
   queueLimit: 0,
+  connectTimeout: 5000, // 5 seconds max timeout so it NEVER hangs indefinitely
   enableKeepAlive: true,
   keepAliveInitialDelay: 10000,
 });
-
-pool.getConnection()
-  .then((conn) => {
-    console.log('✅ MySQL Pool connected to', process.env.DB_NAME || 'u918480384_salah');
-    conn.release();
-  })
-  .catch((err) => {
-    console.error('❌ MySQL Pool connection error:', err.message);
-  });
 
 export default pool;
