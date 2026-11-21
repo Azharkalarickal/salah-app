@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, BellRing } from 'lucide-react';
+import { X, BellRing, Send } from 'lucide-react';
 import Navbar from './components/Navbar';
 import BottomNav from './components/BottomNav';
 import HeroPrayerCard from './components/HeroPrayerCard';
@@ -24,6 +24,7 @@ import {
   updateQuranSettings,
   fetchMotivation,
   fetchMyGroups,
+  fetchGroupMessages,
   sendGroupMessage,
   saveUserCustomTimes,
   fetchLatestBroadcast,
@@ -64,8 +65,15 @@ export default function App() {
   const [callAlertData, setCallAlertData] = useState(null);
   const [adminAnnouncement, setAdminAnnouncement] = useState(null);
 
-  // Keep track of sent notifications today
+  // Chat Quick Reply State (Message Reply box & Send button — NO "I Prayed" button)
+  const [chatQuickReplyData, setChatQuickReplyData] = useState(null);
+  const [chatReplyText, setChatReplyText] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
+
+  // Keep track of sent notifications (prevent repeats)
   const sentAlertsRef = useRef(new Set());
+  const notifiedBroadcastIdsRef = useRef(new Set());
+  const notifiedChatMsgIdsRef = useRef(new Set());
 
   // Load initial data
   const loadData = async (user) => {
@@ -245,9 +253,21 @@ export default function App() {
     try {
       const latest = await fetchLatestBroadcast();
       if (latest && latest.id) {
-        const lastSeen = localStorage.getItem('salah_last_admin_broadcast_id');
-        if (!lastSeen || Number(lastSeen) < latest.id) {
+        const lastNotified = localStorage.getItem('salah_last_admin_broadcast_id');
+        const lastDismissed = localStorage.getItem('salah_dismissed_broadcast_id');
+
+        // Show banner only if user has not explicitly dismissed this broadcast
+        if (lastDismissed !== String(latest.id)) {
           setAdminAnnouncement(latest);
+        }
+
+        // Trigger sound and system push notification ONLY ONCE per broadcast ID
+        if (
+          (!lastNotified || Number(lastNotified) < latest.id) &&
+          !notifiedBroadcastIdsRef.current.has(latest.id)
+        ) {
+          notifiedBroadcastIdsRef.current.add(latest.id);
+          localStorage.setItem('salah_last_admin_broadcast_id', String(latest.id));
           playBellRing();
           showNotification({
             title: `📢 ${latest.title}`,
@@ -255,15 +275,83 @@ export default function App() {
             sound: true,
           });
         }
+      } else {
+        setAdminAnnouncement(null);
       }
     } catch (e) {}
   };
 
   const dismissAdminAnnouncement = () => {
     if (adminAnnouncement?.id) {
-      localStorage.setItem('salah_last_admin_broadcast_id', String(adminAnnouncement.id));
+      localStorage.setItem('salah_dismissed_broadcast_id', String(adminAnnouncement.id));
     }
     setAdminAnnouncement(null);
+  };
+
+  // Poll for incoming family chat messages (runs every 10 seconds)
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    const pollChat = async () => {
+      try {
+        const groups = await fetchMyGroups(currentUser.id);
+        if (!groups || groups.length === 0) return;
+
+        for (const g of groups) {
+          const msgs = await fetchGroupMessages(g.id);
+          if (msgs && msgs.length > 0) {
+            const lastMsg = msgs[msgs.length - 1];
+            // If message is from someone else and not yet notified
+            if (
+              lastMsg &&
+              lastMsg.user_id !== currentUser.id &&
+              !notifiedChatMsgIdsRef.current.has(lastMsg.id)
+            ) {
+              notifiedChatMsgIdsRef.current.add(lastMsg.id);
+              playBellRing();
+              showNotification({
+                title: `💬 ${lastMsg.user_name} (${g.name})`,
+                body: lastMsg.message || '📷 Sent a photo',
+                sound: true,
+              });
+
+              // Show Quick Reply Notification Card
+              setChatQuickReplyData({
+                groupId: g.id,
+                groupName: g.name,
+                messageId: lastMsg.id,
+                senderName: lastMsg.user_name,
+                message: lastMsg.message,
+                image: lastMsg.image,
+              });
+            }
+          }
+        }
+      } catch (e) {}
+    };
+
+    pollChat();
+    const chatInterval = setInterval(pollChat, 10000);
+    return () => clearInterval(chatInterval);
+  }, [currentUser]);
+
+  const handleSendQuickReply = async () => {
+    if (!chatReplyText.trim() || !chatQuickReplyData || !currentUser?.id) return;
+    setSendingReply(true);
+    try {
+      await sendGroupMessage({
+        groupId: chatQuickReplyData.groupId,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        message: chatReplyText.trim(),
+      });
+      setChatReplyText('');
+      setChatQuickReplyData(null);
+    } catch (err) {
+      alert('Failed to send reply');
+    } finally {
+      setSendingReply(false);
+    }
   };
 
   const handleRequestNotif = async () => {
@@ -399,6 +487,72 @@ export default function App() {
       />
 
       <main className="flex-1 max-w-md w-full mx-auto px-4 pt-4 pb-24 space-y-4">
+        {/* Chat Incoming Notification with Inline Reply & Send Button (NO I Prayed button) */}
+        {chatQuickReplyData && (
+          <div className="rounded-2xl bg-slate-900/95 border border-emerald-500/80 p-3.5 shadow-2xl shadow-emerald-950/50 space-y-2.5 animate-in slide-in-from-top-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs">
+                  {chatQuickReplyData.senderName?.[0] || '💬'}
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-white block">
+                    💬 {chatQuickReplyData.senderName}
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-medium">
+                    {chatQuickReplyData.groupName}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setChatQuickReplyData(null)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition"
+                title="Dismiss"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 text-xs text-slate-200">
+              {chatQuickReplyData.image && (
+                <img
+                  src={chatQuickReplyData.image}
+                  alt="Attachment"
+                  className="w-20 h-20 object-cover rounded-lg mb-1.5 border border-slate-700"
+                />
+              )}
+              <p>{chatQuickReplyData.message || '📷 Photo attachment'}</p>
+            </div>
+
+            {/* Inline Reply input and Send Button — strictly NO prayer button */}
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="text"
+                placeholder="Type your reply here..."
+                value={chatReplyText}
+                onChange={(e) => setChatReplyText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSendQuickReply();
+                  }
+                }}
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                autoFocus
+              />
+              <button
+                type="button"
+                disabled={sendingReply || !chatReplyText.trim()}
+                onClick={handleSendQuickReply}
+                className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 transition active:scale-95 disabled:opacity-40 shadow-sm"
+              >
+                <Send size={13} />
+                <span>{sendingReply ? 'Sending...' : 'Send'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Admin Broadcast Announcement Banner */}
         {adminAnnouncement && (
           <div className="rounded-2xl bg-gradient-to-r from-amber-950/90 via-slate-900 to-slate-950 border border-amber-700/60 p-3.5 flex items-start justify-between gap-3 shadow-xl shadow-amber-950/30 animate-in fade-in">

@@ -7,12 +7,11 @@ import {
   Trash2,
   X,
   Lock,
-  Layers,
-  Flame,
-  Award,
   BellRing,
   Send,
-  Radio
+  Clock,
+  CalendarClock,
+  RotateCcw
 } from 'lucide-react';
 import {
   adminLogin,
@@ -21,8 +20,13 @@ import {
   fetchAdminUsers,
   deleteUser,
   sendAdminBroadcast,
-  fetchAdminBroadcasts
+  fetchAdminBroadcasts,
+  adminSaveGlobalPrayerTimes,
+  adminFetchUserPrayerTimes,
+  adminSaveUserPrayerTimes,
+  fetchSettings
 } from '../services/api';
+import { formatTime12 } from '../utils/time';
 
 export default function AdminModal({ isOpen, onClose }) {
   const [authorized, setAuthorized] = useState(false);
@@ -35,14 +39,39 @@ export default function AdminModal({ isOpen, onClose }) {
   const [usersList, setUsersList] = useState([]);
   const [broadcastsList, setBroadcastsList] = useState([]);
 
+  // Global Prayer Times State
+  const [globalPrayerTimes, setGlobalPrayerTimes] = useState({
+    use_custom: true,
+    fajr: '05:00',
+    dhuhr: '12:30',
+    asr: '15:40',
+    maghrib: '18:00',
+    isha: '19:45',
+  });
+  const [globalTimesStatus, setGlobalTimesStatus] = useState('');
+
+  // Per-User Prayer Times Editor
+  const [selectedUserForTimes, setSelectedUserForTimes] = useState(null);
+  const [userSpecificTimes, setUserSpecificTimes] = useState({
+    use_custom: true,
+    fajr: '05:00',
+    dhuhr: '12:30',
+    asr: '15:40',
+    maghrib: '18:00',
+    isha: '19:45',
+  });
+  const [userTimesStatus, setUserTimesStatus] = useState('');
+  const [savingUserTimes, setSavingUserTimes] = useState(false);
+
   // Change Password State
   const [currentPass, setCurrentPass] = useState('');
   const [newPass, setNewPass] = useState('');
   const [passSuccess, setPassSuccess] = useState('');
 
-  // Send Notification State
+  // Send Notification State with Expiry
   const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [broadcastExpiry, setBroadcastExpiry] = useState(24); // hours
   const [broadcastStatus, setBroadcastStatus] = useState('');
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
 
@@ -65,16 +94,97 @@ export default function AdminModal({ isOpen, onClose }) {
 
   const loadAdminData = async () => {
     try {
-      const [s, u, b] = await Promise.all([
+      const [s, u, b, appSettings] = await Promise.all([
         fetchAdminStats(),
         fetchAdminUsers(),
-        fetchAdminBroadcasts().catch(() => [])
+        fetchAdminBroadcasts().catch(() => []),
+        fetchSettings().catch(() => null),
       ]);
       setStats(s);
       setUsersList(u);
       setBroadcastsList(b || []);
+
+      if (appSettings?.prayer) {
+        const p = appSettings.prayer;
+        const pad = (t) => (t ? t.slice(0, 5) : '05:00');
+        setGlobalPrayerTimes({
+          use_custom: Boolean(p.use_custom_times),
+          fajr: pad(p.custom_fajr),
+          dhuhr: pad(p.custom_dhuhr),
+          asr: pad(p.custom_asr),
+          maghrib: pad(p.custom_maghrib),
+          isha: pad(p.custom_isha),
+        });
+      }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleSaveGlobalTimes = async (e) => {
+    e.preventDefault();
+    try {
+      await adminSaveGlobalPrayerTimes({
+        use_custom: globalPrayerTimes.use_custom,
+        fajr: `${globalPrayerTimes.fajr}:00`,
+        dhuhr: `${globalPrayerTimes.dhuhr}:00`,
+        asr: `${globalPrayerTimes.asr}:00`,
+        maghrib: `${globalPrayerTimes.maghrib}:00`,
+        isha: `${globalPrayerTimes.isha}:00`,
+      });
+      setGlobalTimesStatus('Global prayer times updated for all users!');
+      setTimeout(() => setGlobalTimesStatus(''), 3000);
+    } catch (err) {
+      alert('Failed to save global times');
+    }
+  };
+
+  const handleOpenUserTimes = async (u) => {
+    setSelectedUserForTimes(u);
+    setUserTimesStatus('');
+    try {
+      const data = await adminFetchUserPrayerTimes(u.id);
+      if (data?.times) {
+        const t = data.times;
+        const pad = (v) => (v ? v.toString().slice(0, 5) : '05:00');
+        setUserSpecificTimes({
+          use_custom: Boolean(data.useCustom),
+          fajr: pad(t.fajr),
+          dhuhr: pad(t.dhuhr),
+          asr: pad(t.asr),
+          maghrib: pad(t.maghrib),
+          isha: pad(t.isha),
+        });
+      } else {
+        setUserSpecificTimes({ ...globalPrayerTimes });
+      }
+    } catch (e) {
+      setUserSpecificTimes({ ...globalPrayerTimes });
+    }
+  };
+
+  const handleSaveUserSpecificTimes = async (e) => {
+    e.preventDefault();
+    if (!selectedUserForTimes) return;
+    setSavingUserTimes(true);
+    try {
+      await adminSaveUserPrayerTimes(selectedUserForTimes.id, {
+        use_custom: userSpecificTimes.use_custom,
+        fajr: `${userSpecificTimes.fajr}:00`,
+        dhuhr: `${userSpecificTimes.dhuhr}:00`,
+        asr: `${userSpecificTimes.asr}:00`,
+        maghrib: `${userSpecificTimes.maghrib}:00`,
+        isha: `${userSpecificTimes.isha}:00`,
+      });
+      setUserTimesStatus(`Saved custom prayer times for ${selectedUserForTimes.name}!`);
+      setTimeout(() => {
+        setUserTimesStatus('');
+        setSelectedUserForTimes(null);
+      }, 2000);
+    } catch (err) {
+      alert('Failed to save user times');
+    } finally {
+      setSavingUserTimes(false);
     }
   };
 
@@ -85,9 +195,10 @@ export default function AdminModal({ isOpen, onClose }) {
     try {
       await sendAdminBroadcast({
         title: broadcastTitle.trim(),
-        message: broadcastMessage.trim()
+        message: broadcastMessage.trim(),
+        expiryHours: Number(broadcastExpiry),
       });
-      setBroadcastStatus('Notification sent to all users!');
+      setBroadcastStatus('Notification sent! Active until expiration.');
       setBroadcastTitle('');
       setBroadcastMessage('');
       const updated = await fetchAdminBroadcasts();
@@ -135,7 +246,7 @@ export default function AdminModal({ isOpen, onClose }) {
             </div>
             <div>
               <h2 className="text-base font-bold text-white">Admin Control Panel</h2>
-              <p className="text-xs text-slate-400">System management & broadcast</p>
+              <p className="text-xs text-slate-400">Prayer times, notifications & users</p>
             </div>
           </div>
           <button
@@ -200,33 +311,103 @@ export default function AdminModal({ isOpen, onClose }) {
               </div>
             </div>
 
-            {/* SEND NOTIFICATION TO ALL USERS */}
-            <form onSubmit={handleSendBroadcast} className="p-4 rounded-2xl bg-slate-950 border border-emerald-900/40 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-bold text-emerald-400">
+            {/* 1. ADMIN SET GLOBAL PRAYER TIMES */}
+            <form onSubmit={handleSaveGlobalTimes} className="p-4 rounded-2xl bg-slate-950 border border-emerald-900/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-emerald-400">
+                  <Clock size={15} />
+                  <span>Set Global Mosque Prayer Times</span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={globalPrayerTimes.use_custom}
+                    onChange={(e) =>
+                      setGlobalPrayerTimes({ ...globalPrayerTimes, use_custom: e.target.checked })
+                    }
+                    className="sr-only peer"
+                  />
+                  <div className="w-8 h-4 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].map((p) => (
+                  <div key={p} className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold capitalize text-slate-300">{p}</span>
+                      <span className="text-[10px] font-mono text-emerald-400">
+                        {formatTime12(globalPrayerTimes[p] || '00:00')}
+                      </span>
+                    </div>
+                    <input
+                      type="time"
+                      value={globalPrayerTimes[p] || '05:00'}
+                      onChange={(e) =>
+                        setGlobalPrayerTimes({ ...globalPrayerTimes, [p]: e.target.value })
+                      }
+                      className="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {globalTimesStatus && (
+                <p className="text-xs text-emerald-400 font-medium">{globalTimesStatus}</p>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition active:scale-95 shadow-md shadow-emerald-600/20"
+              >
+                Save Global Prayer Times
+              </button>
+            </form>
+
+            {/* 2. SEND NOTIFICATION TO ALL USERS WITH EXPIRY */}
+            <form onSubmit={handleSendBroadcast} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
                 <BellRing size={15} />
-                <span>Send Notification to Users</span>
+                <span>Send Broadcast Notification to Users</span>
               </div>
 
-              <div>
-                <input
-                  type="text"
-                  required
-                  placeholder="Notification Title"
-                  value={broadcastTitle}
-                  onChange={(e) => setBroadcastTitle(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
+              <input
+                type="text"
+                required
+                placeholder="Notification Title"
+                value={broadcastTitle}
+                onChange={(e) => setBroadcastTitle(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+              />
 
-              <div>
-                <textarea
-                  rows={2}
-                  required
-                  placeholder="Notification Message"
-                  value={broadcastMessage}
-                  onChange={(e) => setBroadcastMessage(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 resize-none"
-                />
+              <textarea
+                rows={2}
+                required
+                placeholder="Notification Message"
+                value={broadcastMessage}
+                onChange={(e) => setBroadcastMessage(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 resize-none"
+              />
+
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <CalendarClock size={13} />
+                  <span>Notification Expiry:</span>
+                </span>
+                <select
+                  value={broadcastExpiry}
+                  onChange={(e) => setBroadcastExpiry(Number(e.target.value))}
+                  className="bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value={1}>Expires in 1 Hour</option>
+                  <option value={3}>Expires in 3 Hours</option>
+                  <option value={6}>Expires in 6 Hours</option>
+                  <option value={12}>Expires in 12 Hours</option>
+                  <option value={24}>Expires in 24 Hours (1 Day)</option>
+                  <option value={48}>Expires in 48 Hours (2 Days)</option>
+                  <option value={168}>Expires in 7 Days (1 Week)</option>
+                  <option value={0}>No Expiration</option>
+                </select>
               </div>
 
               {broadcastStatus && (
@@ -243,13 +424,20 @@ export default function AdminModal({ isOpen, onClose }) {
               </button>
 
               {broadcastsList.length > 0 && (
-                <div className="pt-2 border-t border-slate-850 space-y-1.5">
+                <div className="pt-2 border-t border-slate-800 space-y-1.5">
                   <span className="text-[10px] font-semibold text-slate-400 block uppercase">Recently Sent</span>
-                  <div className="max-h-28 overflow-y-auto space-y-1.5">
+                  <div className="max-h-24 overflow-y-auto space-y-1.5">
                     {broadcastsList.slice(0, 3).map((b) => (
-                      <div key={b.id} className="p-2 rounded-lg bg-slate-900/70 border border-slate-800 text-[11px]">
-                        <span className="font-bold text-white block">{b.title}</span>
-                        <span className="text-slate-300 block">{b.message}</span>
+                      <div key={b.id} className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-[11px]">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-white">{b.title}</span>
+                          {b.expires_at && (
+                            <span className="text-[9px] text-amber-400 font-mono">
+                              Exp: {new Date(b.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-slate-300 block mt-0.5">{b.message}</span>
                       </div>
                     ))}
                   </div>
@@ -257,7 +445,120 @@ export default function AdminModal({ isOpen, onClose }) {
               )}
             </form>
 
-            {/* Change Admin Password */}
+            {/* 3. REGISTERED USERS & PER-USER PRAYER TIMES */}
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-200">
+                <div className="flex items-center gap-1.5">
+                  <Users size={14} className="text-emerald-400" />
+                  <span>Registered Users ({usersList.length})</span>
+                </div>
+              </div>
+
+              {usersList.length === 0 ? (
+                <p className="text-xs text-slate-500 py-3 text-center">No registered accounts yet.</p>
+              ) : (
+                <div className="divide-y divide-slate-800/80 max-h-60 overflow-y-auto">
+                  {usersList.map((u) => (
+                    <div key={u.id} className="py-2.5 flex items-center justify-between text-xs">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-white">{u.name}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 font-mono text-[10px] border border-emerald-900">
+                            {u.user_code}
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-slate-400">{u.email}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleOpenUserTimes(u)}
+                          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition"
+                          title="Set custom prayer times for this user"
+                        >
+                          <Clock size={12} />
+                          <span>Set Times</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUser(u.id)}
+                          className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg transition"
+                          title="Delete User"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* MODAL: EDIT PRAYER TIMES FOR SPECIFIC USER */}
+            {selectedUserForTimes && (
+              <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-700 space-y-3 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-bold text-white">
+                      Custom Prayer Times for: {selectedUserForTimes.name}
+                    </h3>
+                    <span className="text-[10px] text-emerald-400 font-mono">
+                      User ID: {selectedUserForTimes.user_code}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedUserForTimes(null)}
+                    className="p-1 text-slate-400 hover:text-white"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].map((p) => (
+                    <div key={p} className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-bold capitalize text-slate-300">{p}</span>
+                        <span className="text-[10px] font-mono text-emerald-400">
+                          {formatTime12(userSpecificTimes[p] || '00:00')}
+                        </span>
+                      </div>
+                      <input
+                        type="time"
+                        value={userSpecificTimes[p] || '05:00'}
+                        onChange={(e) =>
+                          setUserSpecificTimes({ ...userSpecificTimes, [p]: e.target.value })
+                        }
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {userTimesStatus && (
+                  <p className="text-xs text-emerald-400 font-medium">{userTimesStatus}</p>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUserForTimes(null)}
+                    className="flex-1 py-2 bg-slate-800 text-slate-300 text-xs rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingUserTimes}
+                    onClick={handleSaveUserSpecificTimes}
+                    className="flex-1 py-2 bg-emerald-500 text-slate-950 font-bold text-xs rounded-xl shadow-md transition active:scale-95"
+                  >
+                    {savingUserTimes ? 'Saving...' : `Save for ${selectedUserForTimes.name}`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 4. CHANGE ADMIN PASSWORD */}
             <form onSubmit={handleChangePassword} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
               <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
                 <KeyRound size={14} className="text-emerald-400" />
@@ -290,44 +591,6 @@ export default function AdminModal({ isOpen, onClose }) {
                 Update Password
               </button>
             </form>
-
-            {/* Registered Users Management */}
-            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-200">
-                <div className="flex items-center gap-1.5">
-                  <Users size={14} className="text-emerald-400" />
-                  <span>Registered Users ({usersList.length})</span>
-                </div>
-              </div>
-
-              {usersList.length === 0 ? (
-                <p className="text-xs text-slate-500 py-3 text-center">No registered accounts yet.</p>
-              ) : (
-                <div className="divide-y divide-slate-800/80 max-h-56 overflow-y-auto">
-                  {usersList.map((u) => (
-                    <div key={u.id} className="py-2.5 flex items-center justify-between text-xs">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-white">{u.name}</span>
-                          <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 font-mono text-[10px] border border-emerald-900">
-                            {u.user_code}
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-slate-400">{u.email}</span>
-                      </div>
-
-                      <button
-                        onClick={() => handleDeleteUser(u.id)}
-                        className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg transition"
-                        title="Delete User"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         )}
       </div>

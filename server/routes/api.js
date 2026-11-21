@@ -894,20 +894,92 @@ router.put('/settings/quran', async (req, res) => {
 });
 
 // ==========================================
-// 8. ADMIN BROADCAST NOTIFICATIONS
+// 8. ADMIN BROADCAST NOTIFICATIONS & PRAYER TIMES
 // ==========================================
 
-// POST Admin Send Broadcast Notification
+// PUT Admin Set Global Prayer Times
+router.put('/admin/prayer-times', async (req, res) => {
+  try {
+    const { use_custom, fajr, dhuhr, asr, maghrib, isha } = req.body;
+    await pool.query(
+      `UPDATE prayer_settings SET
+         use_custom_times = ?,
+         custom_fajr = ?,
+         custom_dhuhr = ?,
+         custom_asr = ?,
+         custom_maghrib = ?,
+         custom_isha = ?
+       WHERE id = 1`,
+      [
+        Boolean(use_custom),
+        fajr || '05:00:00',
+        dhuhr || '12:30:00',
+        asr || '15:45:00',
+        maghrib || '18:15:00',
+        isha || '19:45:00',
+      ]
+    );
+    const [updated] = await pool.query('SELECT * FROM prayer_settings WHERE id = 1');
+    res.json({ success: true, settings: updated[0] });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update global prayer times' });
+  }
+});
+
+// GET Specific User's Prayer Times for Admin
+router.get('/admin/users/:userId/prayer-times', async (req, res) => {
+  try {
+    const userId = Number(req.params.userId);
+    const [rows] = await pool.query('SELECT * FROM user_prayer_times WHERE user_id = ?', [userId]);
+    if (rows.length > 0) {
+      res.json({ useCustom: Boolean(rows[0].use_custom), times: rows[0] });
+    } else {
+      res.json({ useCustom: false, times: null });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch user prayer times' });
+  }
+});
+
+// PUT Specific User's Prayer Times for Admin
+router.put('/admin/users/:userId/prayer-times', async (req, res) => {
+  try {
+    const userId = Number(req.params.userId);
+    const { use_custom, fajr, dhuhr, asr, maghrib, isha } = req.body;
+    await pool.query(
+      `INSERT INTO user_prayer_times (user_id, use_custom, fajr, dhuhr, asr, maghrib, isha)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         use_custom = VALUES(use_custom),
+         fajr = VALUES(fajr),
+         dhuhr = VALUES(dhuhr),
+         asr = VALUES(asr),
+         maghrib = VALUES(maghrib),
+         isha = VALUES(isha)`,
+      [userId, Boolean(use_custom), fajr, dhuhr, asr, maghrib, isha]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save user prayer times' });
+  }
+});
+
+// POST Admin Send Broadcast Notification with Expiry
 router.post('/admin/broadcast', async (req, res) => {
   try {
-    const { title, message } = req.body;
+    const { title, message, expiryHours } = req.body;
     if (!title || !message) {
       return res.status(400).json({ error: 'Title and message are required' });
     }
 
+    let expiresAt = null;
+    if (expiryHours && Number(expiryHours) > 0) {
+      expiresAt = new Date(Date.now() + Number(expiryHours) * 3600 * 1000);
+    }
+
     const [result] = await pool.query(
-      'INSERT INTO admin_announcements (title, message) VALUES (?, ?)',
-      [title.trim(), message.trim()]
+      'INSERT INTO admin_announcements (title, message, expires_at) VALUES (?, ?, ?)',
+      [title.trim(), message.trim(), expiresAt]
     );
 
     res.json({
@@ -916,6 +988,7 @@ router.post('/admin/broadcast', async (req, res) => {
         id: result.insertId,
         title: title.trim(),
         message: message.trim(),
+        expires_at: expiresAt,
         created_at: new Date(),
       },
     });
@@ -929,7 +1002,7 @@ router.post('/admin/broadcast', async (req, res) => {
 router.get('/admin/broadcasts', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, title, message, created_at FROM admin_announcements ORDER BY id DESC LIMIT 20'
+      'SELECT id, title, message, expires_at, created_at FROM admin_announcements ORDER BY id DESC LIMIT 20'
     );
     res.json(rows);
   } catch (err) {
@@ -937,11 +1010,11 @@ router.get('/admin/broadcasts', async (req, res) => {
   }
 });
 
-// GET Latest Notification for Users
+// GET Latest Notification for Users (Filtering Out Expired)
 router.get('/notifications/latest', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id, title, message, created_at FROM admin_announcements ORDER BY id DESC LIMIT 1'
+      'SELECT id, title, message, expires_at, created_at FROM admin_announcements WHERE expires_at IS NULL OR expires_at > NOW() ORDER BY id DESC LIMIT 1'
     );
     if (rows.length > 0) {
       res.json(rows[0]);

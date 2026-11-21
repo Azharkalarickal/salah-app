@@ -195,9 +195,14 @@ export async function initializeDatabase() {
         id INT AUTO_INCREMENT PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
         message TEXT NOT NULL,
+        expires_at DATETIME NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    try {
+      await conn.query('ALTER TABLE admin_announcements ADD COLUMN expires_at DATETIME NULL');
+    } catch (e) {}
 
     // Seed Malayalam Hadiths & Quran quotes if table is empty
     const [msgCount] = await conn.query('SELECT COUNT(*) as count FROM motivational_messages');

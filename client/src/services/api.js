@@ -246,12 +246,12 @@ export async function fetchMotivation(category = 'general') {
   };
 }
 
-// --- ADMIN BROADCAST NOTIFICATIONS ---
-export async function sendAdminBroadcast({ title, message }) {
+// --- ADMIN BROADCAST NOTIFICATIONS & PRAYER MANAGEMENT ---
+export async function sendAdminBroadcast({ title, message, expiryHours }) {
   const res = await fetch(`${BASE_URL}/admin/broadcast`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, message }),
+    body: JSON.stringify({ title, message, expiryHours }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to send notification');
@@ -270,4 +270,32 @@ export async function fetchLatestBroadcast() {
     if (res.ok) return res.json();
   } catch (e) {}
   return null;
+}
+
+export async function adminSaveGlobalPrayerTimes(payload) {
+  const res = await fetch(`${BASE_URL}/admin/prayer-times`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to set global prayer times');
+  return data;
+}
+
+export async function adminFetchUserPrayerTimes(userId) {
+  const res = await fetch(`${BASE_URL}/admin/users/${userId}/prayer-times`);
+  if (!res.ok) throw new Error('Failed to fetch user prayer times');
+  return res.json();
+}
+
+export async function adminSaveUserPrayerTimes(userId, payload) {
+  const res = await fetch(`${BASE_URL}/admin/users/${userId}/prayer-times`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to set user prayer times');
+  return data;
 }
