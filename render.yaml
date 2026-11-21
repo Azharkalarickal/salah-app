@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: salah-app
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DB_HOST
+        value: srv932.hstgr.io
+      - key: DB_PORT
+        value: 3306
+      - key: DB_USER
+        value: u918480384_salah
+      - key: DB_NAME
+        value: u918480384_salah
+      - key: DB_PASSWORD
+        sync: false

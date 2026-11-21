@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#064e3b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#022c22;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#grad)" />
+  <!-- Crescent & Star -->
+  <path d="M280 140 C200 140 140 200 140 280 C140 360 200 420 280 420 C320 420 355 405 380 380 C310 380 250 325 250 255 C250 185 310 140 380 140 C355 140 320 140 280 140 Z" fill="#34d399" />
+  <polygon points="340,210 355,240 390,240 360,260 372,290 340,270 310,290 320,260 290,240 325,240" fill="#fef08a" />
+</svg>
