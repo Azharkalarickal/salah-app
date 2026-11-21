@@ -29,9 +29,18 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // API Routes
 app.use('/api', apiRouter);
 
-// Health check endpoint for Render
+// Health & Ping endpoints for Render Keep-Alive
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+app.get('/api/ping', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Render 24/7 keep-alive ping received',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+  });
 });
 
 // Serve frontend static build in production
@@ -53,11 +62,30 @@ app.get('*', (req, res, next) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Salah Server running on http://0.0.0.0:${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'production'}`);
+  initRenderKeepAlive();
 });
 
 server.on('error', (err) => {
   console.error('Server error:', err);
 });
+
+// Render 24/7 Keep-Alive Pinger (pings public URL every 12 minutes so Render free tier never sleeps)
+function initRenderKeepAlive() {
+  const externalUrl = process.env.RENDER_EXTERNAL_URL || 'https://salah-app-zl1l.onrender.com';
+  const PING_INTERVAL_MS = 12 * 60 * 1000; // 12 minutes (Render sleeps after 15 min)
+
+  console.log(`⏱️ Initializing 24/7 Render Keep-Alive Pinger for ${externalUrl} every 12 mins...`);
+
+  setInterval(async () => {
+    try {
+      const pingUrl = `${externalUrl}/health`;
+      const res = await fetch(pingUrl);
+      console.log(`[Keep-Alive Ping] ${new Date().toLocaleTimeString()} -> ${pingUrl} (HTTP ${res.status})`);
+    } catch (err) {
+      console.warn(`[Keep-Alive Ping Notice]`, err?.message || err);
+    }
+  }, PING_INTERVAL_MS);
+}
 
 // Initialize database schema asynchronously
 initializeDatabase();

@@ -40,6 +40,8 @@ import {
   showNotification,
   playChime,
   playBellRing,
+  startBackgroundAudioKeepAlive,
+  requestScreenWakeLock,
 } from './utils/notifications';
 
 export default function App() {
@@ -81,49 +83,6 @@ export default function App() {
   const [incomingGroupCall, setIncomingGroupCall] = useState(null);
   const declinedCallIdsRef = useRef(new Set());
 
-  // PWA Direct Installation State
-  const [installPrompt, setInstallPrompt] = useState(null);
-  const [isAppInstalled, setIsAppInstalled] = useState(false);
-
-  useEffect(() => {
-    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
-      setIsAppInstalled(true);
-    }
-
-    const handleBeforeInstall = (e) => {
-      e.preventDefault();
-      setInstallPrompt(e);
-    };
-
-    const handleAppInstalled = () => {
-      setIsAppInstalled(true);
-      setInstallPrompt(null);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    window.addEventListener('appinstalled', handleAppInstalled);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-    };
-  }, []);
-
-  const handleInstallApp = async () => {
-    if (!installPrompt) {
-      alert(
-        "To install on iPhone / iPad:\n1. Tap the Share button (square with arrow) in Safari\n2. Scroll down and tap 'Add to Home Screen'\n\nTo install on Android:\nTap the 3 dots menu (⋮) in Chrome and select 'Install app' or 'Add to Home screen'."
-      );
-      return;
-    }
-    installPrompt.prompt();
-    const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setInstallPrompt(null);
-      setIsAppInstalled(true);
-    }
-  };
-
   // Keep track of sent notifications (prevent repeats)
   const sentAlertsRef = useRef(new Set());
   const notifiedBroadcastIdsRef = useRef(new Set());
@@ -155,11 +114,33 @@ export default function App() {
     loadData();
   }, [currentUser]);
 
+  // 24/7 Render Keep-Alive Client Pinger (Pings every 12 minutes so Render never sleeps)
+  useEffect(() => {
+    const pingServer = async () => {
+      try {
+        await fetch('/api/ping');
+      } catch (e) {}
+    };
+
+    pingServer();
+    const pingInterval = setInterval(pingServer, 12 * 60 * 1000);
+    return () => clearInterval(pingInterval);
+  }, []);
+
+  // 24-Hour Continuous Background Audio & WakeLock Engine
+  useEffect(() => {
+    const is24hEnabled = localStorage.getItem('salah_24h_background') !== 'false';
+    if (is24hEnabled) {
+      startBackgroundAudioKeepAlive();
+      requestScreenWakeLock();
+    }
+  }, []);
+
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
     try {
       localStorage.setItem('salah_user', JSON.stringify(user));
-    } catch (e) {}
+    } catch (e) { }
     loadData(user);
   };
 
@@ -167,7 +148,7 @@ export default function App() {
     setCurrentUser(null);
     try {
       localStorage.removeItem('salah_user');
-    } catch (e) {}
+    } catch (e) { }
     setShowAuthModal(false);
     loadData(null);
   };
@@ -272,7 +253,7 @@ export default function App() {
               prayer: prayer.name,
               sound: enableSound,
             });
-          } catch (e) {}
+          } catch (e) { }
         }
       }
 
@@ -332,7 +313,7 @@ export default function App() {
       } else {
         setAdminAnnouncement(null);
       }
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const dismissAdminAnnouncement = () => {
@@ -381,7 +362,7 @@ export default function App() {
             }
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     };
 
     pollChat();
@@ -428,7 +409,7 @@ export default function App() {
         } else if (incomingGroupCall) {
           setIncomingGroupCall(null);
         }
-      } catch (e) {}
+      } catch (e) { }
     };
 
     pollIncomingCalls();
@@ -455,7 +436,7 @@ export default function App() {
     declinedCallIdsRef.current.add(call.id);
     try {
       await leaveGroupCall({ callId: call.id, userId: currentUser.id });
-    } catch (e) {}
+    } catch (e) { }
     setIncomingGroupCall(null);
   };
 
@@ -471,7 +452,7 @@ export default function App() {
         sound: true,
       });
       localStorage.setItem('salah_last_hourly_reminder', String(Date.now()));
-    } catch (e) {}
+    } catch (e) { }
   };
 
   useEffect(() => {
@@ -775,9 +756,6 @@ export default function App() {
                 onTestCallAlert={handleTriggerCallAlert}
                 onOpenEditTimes={() => setShowEditTimesModal(true)}
                 onTestHourlyReminder={triggerHourlyReminder}
-                onInstallApp={handleInstallApp}
-                isAppInstalled={isAppInstalled}
-                installPromptAvailable={Boolean(installPrompt)}
               />
             )}
           </>

@@ -192,3 +192,66 @@ export function showNotification({ title, body, icon = '/icon.svg', prayer, soun
     console.error('Error triggering notification:', e);
   }
 }
+
+// ==========================================
+// 24/7 BACKGROUND KEEP-ALIVE & WAKELOCK
+// ==========================================
+let wakeLockSentinel = null;
+let backgroundKeepAliveInterval = null;
+
+export async function requestScreenWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+      wakeLockSentinel.addEventListener('release', () => {
+        wakeLockSentinel = null;
+      });
+      return true;
+    } catch (e) {
+      console.warn('Wake Lock request notice:', e);
+      return false;
+    }
+  }
+  return false;
+}
+
+export function releaseScreenWakeLock() {
+  if (wakeLockSentinel) {
+    wakeLockSentinel.release().catch(() => {});
+    wakeLockSentinel = null;
+  }
+}
+
+// Inaudible periodic audio heartbeat to prevent Android & iOS browser thread suspension
+export function startBackgroundAudioKeepAlive() {
+  stopBackgroundAudioKeepAlive();
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    backgroundKeepAliveInterval = setInterval(() => {
+      try {
+        if (ctx.state === 'suspended') {
+          ctx.resume();
+        }
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.setValueAtTime(25, ctx.currentTime);
+        gain.gain.setValueAtTime(0.00001, ctx.currentTime); // Inaudible
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.1);
+      } catch (e) {}
+    }, 25000);
+  } catch (err) {
+    console.warn('Keep-alive audio notice:', err);
+  }
+}
+
+export function stopBackgroundAudioKeepAlive() {
+  if (backgroundKeepAliveInterval) {
+    clearInterval(backgroundKeepAliveInterval);
+    backgroundKeepAliveInterval = null;
+  }
+}

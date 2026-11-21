@@ -1,6 +1,32 @@
-import React, { useState } from 'react';
-import { Settings, MapPin, Bell, Volume2, Save, Sliders, Check, Clock, Smartphone, Download, Share2, Copy } from 'lucide-react';
-import { playBellRing } from '../utils/notifications';
+import React, { useState, useEffect } from 'react';
+import {
+  Settings,
+  MapPin,
+  Bell,
+  Volume2,
+  Save,
+  Sliders,
+  Check,
+  Clock,
+  Smartphone,
+  Download,
+  Share2,
+  Copy,
+  Zap,
+  BatteryCharging,
+  Activity,
+  Info,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw
+} from 'lucide-react';
+import {
+  playBellRing,
+  startBackgroundAudioKeepAlive,
+  stopBackgroundAudioKeepAlive,
+  requestScreenWakeLock,
+  releaseScreenWakeLock
+} from '../utils/notifications';
 
 export default function SettingsTab({
   settings,
@@ -14,7 +40,50 @@ export default function SettingsTab({
   installPromptAvailable,
 }) {
   const [copiedLink, setCopiedLink] = useState(false);
+  const [is24hBackgroundEnabled, setIs24hBackgroundEnabled] = useState(
+    () => localStorage.getItem('salah_24h_background') !== 'false'
+  );
+  const [showBatteryGuide, setShowBatteryGuide] = useState(false);
+  const [pingStatus, setPingStatus] = useState('');
+  const [pinging, setPinging] = useState(false);
   const appUrl = 'https://salah-app-zl1l.onrender.com';
+
+  useEffect(() => {
+    if (is24hBackgroundEnabled) {
+      startBackgroundAudioKeepAlive();
+      requestScreenWakeLock();
+    }
+  }, []);
+
+  const handleToggle24hBackground = async () => {
+    const nextState = !is24hBackgroundEnabled;
+    setIs24hBackgroundEnabled(nextState);
+    localStorage.setItem('salah_24h_background', String(nextState));
+
+    if (nextState) {
+      startBackgroundAudioKeepAlive();
+      await requestScreenWakeLock();
+    } else {
+      stopBackgroundAudioKeepAlive();
+      releaseScreenWakeLock();
+    }
+  };
+
+  const handleTestPing = async () => {
+    setPinging(true);
+    const start = Date.now();
+    try {
+      const res = await fetch('/api/ping');
+      const data = await res.json();
+      const latency = Date.now() - start;
+      setPingStatus(`Server 24/7 Alive! (${latency}ms) — Uptime: ${data.uptime || 0}s`);
+    } catch (e) {
+      setPingStatus('Ping failed to reach server');
+    } finally {
+      setPinging(false);
+      setTimeout(() => setPingStatus(''), 4000);
+    }
+  };
 
   const handleCopyLink = () => {
     try {
@@ -425,6 +494,97 @@ export default function SettingsTab({
             <Clock size={15} />
             <span>Change My Daily Adhan Times</span>
           </button>
+        </div>
+      </div>
+
+      {/* 24/7 BACKGROUND RUN & RENDER KEEP-ALIVE */}
+      <div className="rounded-3xl p-5 bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-emerald-500/30 space-y-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <Zap size={18} />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>24-Hour Background Run</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono">
+                  {is24hBackgroundEnabled ? 'Active 24/7' : 'Standby'}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400">Keep prayer alerts & reminders active without phone sleeping</p>
+            </div>
+          </div>
+
+          {/* Toggle Switch */}
+          <button
+            type="button"
+            onClick={handleToggle24hBackground}
+            className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
+              is24hBackgroundEnabled ? 'bg-emerald-500' : 'bg-slate-700'
+            }`}
+          >
+            <div
+              className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform shadow ${
+                is24hBackgroundEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* Server 24/7 Keep-Alive Status */}
+        <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              <span className="font-semibold text-slate-200">Render Server 24/7 Keep-Alive</span>
+            </div>
+            <button
+              type="button"
+              disabled={pinging}
+              onClick={handleTestPing}
+              className="px-2.5 py-1 rounded-lg bg-slate-850 hover:bg-slate-800 text-emerald-300 text-[11px] font-semibold border border-slate-700 flex items-center gap-1 active:scale-95 transition cursor-pointer"
+            >
+              <RefreshCw size={11} className={pinging ? 'animate-spin' : ''} />
+              <span>{pinging ? 'Pinging...' : 'Ping Server'}</span>
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Automatically sends a heartbeat request every 12 minutes to keep the Render free-tier instance running continuously without 15-minute hibernation.
+          </p>
+          {pingStatus && (
+            <p className="text-[11px] text-emerald-400 font-mono font-semibold pt-1 border-t border-slate-800">
+              ✓ {pingStatus}
+            </p>
+          )}
+        </div>
+
+        {/* Phone Battery Permission Guide (Collapsible) */}
+        <div className="rounded-2xl bg-slate-900/70 border border-slate-800 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowBatteryGuide(!showBatteryGuide)}
+            className="w-full p-3 flex items-center justify-between text-xs font-semibold text-slate-200 hover:text-white transition cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <BatteryCharging size={15} className="text-amber-400" />
+              <span>How to give 24-hr permission on Android / iOS</span>
+            </div>
+            {showBatteryGuide ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          </button>
+
+          {showBatteryGuide && (
+            <div className="p-3 pt-0 border-t border-slate-800/60 text-[11px] text-slate-300 space-y-2 bg-slate-950/40">
+              <p className="text-slate-400">
+                To prevent Android from putting the app to sleep after 15 minutes, allow unrestricted background battery:
+              </p>
+              <div className="space-y-1.5 pl-1">
+                <p><b>1.</b> Long-press the <b>Salah App</b> icon on your home screen and tap <b>App info (ⓘ)</b>.</p>
+                <p><b>2.</b> Tap <b>Battery</b> (or Battery usage) ➔ Select <b>"Unrestricted"</b> (turn off battery optimization).</p>
+                <p><b>3.</b> Enable <b>"Allow background activity"</b> and <b>"Autostart"</b> (Samsung, Xiaomi, Vivo, Realme, OnePlus).</p>
+                <p><b>4.</b> Under <b>Notifications</b>, ensure <b>"Lock screen notifications"</b> and sound are enabled.</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
