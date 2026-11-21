@@ -21,6 +21,7 @@ import {
   deleteUser,
   sendAdminBroadcast,
   fetchAdminBroadcasts,
+  deleteAdminBroadcast,
   adminSaveGlobalPrayerTimes,
   adminFetchUserPrayerTimes,
   adminSaveUserPrayerTimes,
@@ -241,6 +242,30 @@ export default function AdminModal({ isOpen, onClose }) {
     }
   };
 
+  const handleDeleteBroadcast = async (broadcastId) => {
+    if (!confirm('Are you sure you want to delete this notification? It will be removed immediately from all users.')) return;
+    try {
+      await deleteAdminBroadcast(broadcastId);
+      setBroadcastsList((prev) => prev.filter((b) => b.id !== broadcastId));
+      setBroadcastStatus('Notification deleted successfully');
+      setTimeout(() => setBroadcastStatus(''), 2500);
+    } catch (err) {
+      alert(err.message || 'Failed to delete notification');
+    }
+  };
+
+  const handleDeleteAllBroadcasts = async () => {
+    if (!confirm('Are you sure you want to delete ALL previous notifications?')) return;
+    try {
+      await deleteAdminBroadcast();
+      setBroadcastsList([]);
+      setBroadcastStatus('All notifications cleared');
+      setTimeout(() => setBroadcastStatus(''), 2500);
+    } catch (err) {
+      alert(err.message || 'Failed to delete notifications');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-2xl relative text-slate-100">
@@ -430,22 +455,66 @@ export default function AdminModal({ isOpen, onClose }) {
               </button>
 
               {broadcastsList.length > 0 && (
-                <div className="pt-2 border-t border-slate-800 space-y-1.5">
-                  <span className="text-[10px] font-semibold text-slate-400 block uppercase">Recently Sent</span>
-                  <div className="max-h-24 overflow-y-auto space-y-1.5">
-                    {broadcastsList.slice(0, 3).map((b) => (
-                      <div key={b.id} className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-[11px]">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-white">{b.title}</span>
-                          {b.expires_at && (
-                            <span className="text-[9px] text-amber-400 font-mono">
-                              Exp: {new Date(b.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          )}
+                <div className="pt-2 border-t border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Previous Notifications ({broadcastsList.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleDeleteAllBroadcasts}
+                      className="text-[10px] text-rose-400 hover:text-rose-300 flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <Trash2 size={11} />
+                      <span>Clear All</span>
+                    </button>
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                    {broadcastsList.map((b) => {
+                      const isExpired = b.expires_at && new Date(b.expires_at) < new Date();
+                      return (
+                        <div
+                          key={b.id}
+                          className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-[11px] flex items-start justify-between gap-2 hover:border-slate-700 transition"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-white truncate">{b.title}</span>
+                              {isExpired ? (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-950/80 text-rose-400 border border-rose-800/50">
+                                  Expired
+                                </span>
+                              ) : b.expires_at ? (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-950/80 text-amber-300 border border-amber-800/50 font-mono">
+                                  Exp: {new Date(b.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              ) : (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/50">
+                                  Active
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-slate-300 mt-1 whitespace-pre-wrap break-words">{b.message}</p>
+                            {b.created_at && (
+                              <span className="text-[9px] text-slate-500 mt-1 block font-mono">
+                                Sent: {new Date(b.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Delete Previous Notification Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBroadcast(b.id)}
+                            title="Delete this notification"
+                            className="p-1.5 rounded-lg text-rose-400 hover:text-white hover:bg-rose-900/50 border border-transparent hover:border-rose-700/60 transition active:scale-90 flex-shrink-0 cursor-pointer"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </div>
-                        <span className="text-slate-300 block mt-0.5">{b.message}</span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

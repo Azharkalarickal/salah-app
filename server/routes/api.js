@@ -1250,6 +1250,29 @@ router.get('/admin/broadcasts', async (req, res) => {
   }
 });
 
+// DELETE Admin Broadcast by ID
+router.delete('/admin/broadcasts/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM admin_announcements WHERE id = ?', [id]);
+    res.json({ success: true, message: 'Notification deleted successfully' });
+  } catch (err) {
+    console.error('Delete broadcast error:', err);
+    res.status(500).json({ error: 'Failed to delete notification' });
+  }
+});
+
+// DELETE All Admin Broadcasts
+router.delete('/admin/broadcasts', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM admin_announcements');
+    res.json({ success: true, message: 'All notifications deleted successfully' });
+  } catch (err) {
+    console.error('Delete all broadcasts error:', err);
+    res.status(500).json({ error: 'Failed to delete all notifications' });
+  }
+});
+
 // GET Latest Notification for Users (Filtering Out Expired)
 router.get('/notifications/latest', async (req, res) => {
   try {

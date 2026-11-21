@@ -339,6 +339,16 @@ export async function fetchAdminBroadcasts() {
   return res.json();
 }
 
+export async function deleteAdminBroadcast(id) {
+  const url = id ? `${BASE_URL}/admin/broadcasts/${id}` : `${BASE_URL}/admin/broadcasts`;
+  const res = await fetch(url, {
+    method: 'DELETE',
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to delete notification');
+  return data;
+}
+
 export async function fetchLatestBroadcast() {
   try {
     const res = await fetch(`${BASE_URL}/notifications/latest`);
