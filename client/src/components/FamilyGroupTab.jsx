@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Users,
   Plus,
@@ -10,7 +10,10 @@ import {
   Check,
   BookOpen,
   Sparkles,
-  LogIn
+  LogIn,
+  Image as ImageIcon,
+  X,
+  Maximize2
 } from 'lucide-react';
 import {
   fetchMyGroups,
@@ -21,6 +24,7 @@ import {
   fetchGroupMessages,
   sendGroupMessage
 } from '../services/api';
+import { showNotification, playBellRing } from '../utils/notifications';
 
 export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
   const [groups, setGroups] = useState([]);
@@ -29,6 +33,8 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
   const [boardData, setBoardData] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [viewingPhoto, setViewingPhoto] = useState(null);
   const [loading, setLoading] = useState(false);
 
   // Modals
@@ -44,6 +50,21 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
   const [inviteError, setInviteError] = useState('');
   const [copiedGroupCode, setCopiedGroupCode] = useState(false);
 
+  // Refs for chat scroll & tracking notified message IDs
+  const chatBottomRef = useRef(null);
+  const notifiedMessageIdsRef = useRef(new Set());
+
+  // Quick Salam & Reply Shortcuts
+  const quickShortcuts = [
+    'Assalamu Alaikum wa Rahmatullah 🌿',
+    'Wa Alaikum Assalam wa Rahmatullah 🤝',
+    'Alhamdulillah 🤲',
+    'JazakAllah Khair ✨',
+    'Time for Jama’ah! 🕌',
+    'Completed my Salah Alhamdulillah 🕋',
+    'May Allah accept our prayers 🤲'
+  ];
+
   // Load Groups
   useEffect(() => {
     if (currentUser?.id) {
@@ -56,11 +77,18 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
     if (selectedGroup?.id) {
       loadGroupBoardAndChat(selectedGroup.id);
       const interval = setInterval(() => {
-        loadGroupMessagesOnly(selectedGroup.id);
-      }, 8000);
+        pollGroupMessages(selectedGroup.id);
+      }, 5000);
       return () => clearInterval(interval);
     }
   }, [selectedGroup]);
+
+  // Auto scroll chat to bottom
+  useEffect(() => {
+    if (activeSubTab === 'chat') {
+      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, activeSubTab]);
 
   const loadUserGroups = async () => {
     try {
@@ -83,6 +111,8 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
       ]);
       setBoardData(board);
       setMessages(msgs);
+      // Mark current messages as notified
+      msgs.forEach((m) => notifiedMessageIdsRef.current.add(m.id));
     } catch (err) {
       console.error(err);
     } finally {
@@ -90,10 +120,27 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
     }
   };
 
-  const loadGroupMessagesOnly = async (groupId) => {
+  const pollGroupMessages = async (groupId) => {
     try {
       const msgs = await fetchGroupMessages(groupId);
-      setMessages(msgs);
+      if (msgs && msgs.length > 0) {
+        // Check for new messages from other family members
+        msgs.forEach((m) => {
+          if (!notifiedMessageIdsRef.current.has(m.id)) {
+            notifiedMessageIdsRef.current.add(m.id);
+            if (m.user_id !== currentUser?.id) {
+              // Trigger Notification with Bell sound
+              playBellRing();
+              showNotification({
+                title: `💬 ${m.user_name} (${selectedGroup?.name || 'Family'})`,
+                body: m.message || '📷 Sent a photo',
+                sound: true,
+              });
+            }
+          }
+        });
+        setMessages(msgs);
+      }
     } catch (e) {}
   };
 
@@ -142,18 +189,37 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
     }
   };
 
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !selectedGroup) return;
-    const msgText = newMessage.trim();
+  const handlePhotoSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSelectedPhoto(event.target?.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSendMessage = async (textToSend) => {
+    const text = typeof textToSend === 'string' ? textToSend : newMessage;
+    if ((!text || !text.trim()) && !selectedPhoto) return;
+    const msgText = (text || '').trim();
+    const photo = selectedPhoto;
+
     setNewMessage('');
+    setSelectedPhoto(null);
+
     try {
       const sent = await sendGroupMessage({
         groupId: selectedGroup.id,
         userId: currentUser.id,
         userName: currentUser.name,
         message: msgText,
+        image: photo,
       });
+      if (sent?.id) {
+        notifiedMessageIdsRef.current.add(sent.id);
+      }
       setMessages((prev) => [...prev, sent]);
     } catch (err) {
       console.error(err);
@@ -175,7 +241,7 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
         <div>
           <h2 className="text-lg font-bold text-white">Family Prayer & Quran Groups</h2>
           <p className="text-xs text-slate-400 max-w-xs mx-auto mt-1">
-            Create a family circle, invite relatives by their User ID, chat together, and see each other's daily Salah & Quran completion!
+            Create a family circle, invite relatives by User ID, chat together with photo sharing, and celebrate prayer completions!
           </p>
         </div>
         <button
@@ -190,9 +256,9 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
   }
 
   return (
-    <div className="space-y-4 pb-24 text-slate-100">
+    <div className="space-y-3 pb-24 text-slate-100">
       {/* User ID Header Banner */}
-      <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-xs">
+      <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-900 border border-slate-800 text-xs">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
             {currentUser.name?.[0] || 'U'}
@@ -205,7 +271,7 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
 
         <button
           onClick={() => handleCopyCode(currentUser.user_code)}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 font-medium"
+          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 font-medium"
         >
           {copiedGroupCode ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
           <span>Copy ID</span>
@@ -252,7 +318,7 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
           <Users size={32} className="mx-auto text-emerald-400" />
           <h3 className="text-sm font-bold text-white">No Family Groups Yet</h3>
           <p className="text-xs text-slate-400 max-w-xs mx-auto">
-            Create a group to invite your parents, spouse, or siblings and track prayers together!
+            Create a family circle to invite relatives by User ID and track prayers together!
           </p>
           <button
             onClick={() => setShowCreateModal(true)}
@@ -292,7 +358,7 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
               onClick={() => setActiveSubTab('board')}
               className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
                 activeSubTab === 'board'
-                  ? 'bg-emerald-500 text-slate-950'
+                  ? 'bg-emerald-500 text-slate-950 shadow'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -303,7 +369,7 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
               onClick={() => setActiveSubTab('chat')}
               className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
                 activeSubTab === 'chat'
-                  ? 'bg-emerald-500 text-slate-950'
+                  ? 'bg-emerald-500 text-slate-950 shadow'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -338,7 +404,6 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
                     </div>
                   </div>
 
-                  {/* 5 Prayers Progress Row */}
                   <div className="grid grid-cols-5 gap-1.5 pt-1">
                     {['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].map((p) => {
                       const st = member.prayers[p];
@@ -361,7 +426,6 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
                     })}
                   </div>
 
-                  {/* Quran Progress for Member */}
                   <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/60">
                     <span className="flex items-center gap-1.5 text-teal-400 font-medium text-[11px]">
                       <BookOpen size={12} />
@@ -378,14 +442,14 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
             </div>
           )}
 
-          {/* 2. Group Chat */}
+          {/* 2. Family Chat (Fixed Bottom Layout) */}
           {activeSubTab === 'chat' && (
-            <div className="rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col h-[400px] overflow-hidden">
-              {/* Message List */}
+            <div className="flex flex-col h-[520px] rounded-3xl bg-slate-900/90 border border-slate-800 overflow-hidden relative shadow-2xl">
+              {/* Message Feed */}
               <div className="flex-1 p-3 overflow-y-auto space-y-2.5">
                 {messages.length === 0 ? (
-                  <p className="text-xs text-slate-500 text-center py-10">
-                    No messages yet. Send a salam to your family!
+                  <p className="text-xs text-slate-500 text-center py-12">
+                    No messages yet. Send a Salam or prayer reminder to your family!
                   </p>
                 ) : (
                   messages.map((m, idx) => {
@@ -396,45 +460,115 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
                         className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
                       >
                         {!isMe && (
-                          <span className="text-[10px] text-slate-400 font-semibold mb-0.5">
+                          <span className="text-[10px] text-slate-400 font-semibold mb-0.5 px-1">
                             {m.user_name}
                           </span>
                         )}
                         <div
-                          className={`max-w-[80%] rounded-2xl px-3 py-2 text-xs leading-relaxed ${
+                          className={`max-w-[82%] rounded-2xl p-2.5 text-xs leading-relaxed space-y-1.5 ${
                             isMe
-                              ? 'bg-emerald-600 text-white rounded-br-none'
-                              : 'bg-slate-800 text-slate-100 rounded-bl-none'
+                              ? 'bg-emerald-600 text-white rounded-br-none shadow-md'
+                              : 'bg-slate-800 text-slate-100 rounded-bl-none border border-slate-700/60 shadow-md'
                           }`}
                         >
-                          {m.message}
+                          {/* Image Attachment in Chat Bubble */}
+                          {m.image && (
+                            <div
+                              onClick={() => setViewingPhoto(m.image)}
+                              className="cursor-pointer overflow-hidden rounded-xl border border-white/20 max-h-52"
+                            >
+                              <img
+                                src={m.image}
+                                alt="Chat attachment"
+                                className="w-full h-auto object-cover hover:scale-105 transition duration-200"
+                              />
+                            </div>
+                          )}
+                          {m.message && <p className="whitespace-pre-wrap">{m.message}</p>}
                         </div>
                       </div>
                     );
                   })
                 )}
+                <div ref={chatBottomRef} />
               </div>
 
-              {/* Chat Input */}
-              <form onSubmit={handleSendMessage} className="p-2 border-t border-slate-800 flex items-center gap-2 bg-slate-950">
+              {/* Selected Photo Preview before sending */}
+              {selectedPhoto && (
+                <div className="px-3 py-1.5 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <img src={selectedPhoto} alt="Preview" className="w-10 h-10 object-cover rounded-lg border border-emerald-500" />
+                    <span className="text-[11px] text-emerald-400 font-medium">Photo attached</span>
+                  </div>
+                  <button onClick={() => setSelectedPhoto(null)} className="p-1 text-slate-400 hover:text-white">
+                    <X size={15} />
+                  </button>
+                </div>
+              )}
+
+              {/* Quick Salam & Reply Shortcut Chips */}
+              <div className="px-2 py-1.5 bg-slate-950/80 border-t border-slate-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                {quickShortcuts.map((chip, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSendMessage(chip)}
+                    className="px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-[10px] text-emerald-300 font-medium whitespace-nowrap hover:bg-emerald-950 hover:border-emerald-700 active:scale-95 transition"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+
+              {/* Fixed Bottom Input Bar */}
+              <div className="p-2 border-t border-slate-800 bg-slate-950 flex items-center gap-1.5">
+                {/* Photo Attachment Button */}
+                <label className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-emerald-400 cursor-pointer active:scale-95 transition">
+                  <ImageIcon size={17} />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoSelect}
+                  />
+                </label>
+
                 <input
                   type="text"
-                  placeholder="Message family..."
+                  placeholder="Type message or choose a shortcut..."
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
-                  className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                 />
+
                 <button
-                  type="submit"
-                  className="p-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition active:scale-95"
+                  type="button"
+                  onClick={() => handleSendMessage()}
+                  className="p-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition active:scale-95 font-bold shadow-md shadow-emerald-500/20"
                 >
                   <Send size={15} />
                 </button>
-              </form>
+              </div>
             </div>
           )}
         </>
       ) : null}
+
+      {/* Lightbox / View Full Photo Modal */}
+      {viewingPhoto && (
+        <div
+          onClick={() => setViewingPhoto(null)}
+          className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 cursor-pointer"
+        >
+          <img src={viewingPhoto} alt="Full view" className="max-w-full max-h-[90vh] rounded-2xl object-contain shadow-2xl" />
+        </div>
+      )}
 
       {/* Modal: Create Group */}
       {showCreateModal && (

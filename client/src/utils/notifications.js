@@ -1,4 +1,4 @@
-// Synthesized Authentic Phone Ringtone & Call Audio Engine
+// Synthesized Bell Ring & Local Custom Tune Audio Engine
 
 let ringtoneInterval = null;
 let audioCtx = null;
@@ -16,8 +16,65 @@ function getAudioContext() {
   return audioCtx;
 }
 
-// Authentic Smartphone Marimba-style Ringtone Melody
+// 1. Crystal Clear Realistic Bell Ring Synthesizer
+export function playBellRing() {
+  // Check if user has uploaded a custom local audio tune
+  const customTune = localStorage.getItem('salah_custom_audio');
+  if (customTune) {
+    try {
+      const audio = new Audio(customTune);
+      audio.play().catch((e) => console.log('Custom audio autoplay notice:', e));
+      return;
+    } catch (e) {}
+  }
+
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    // Harmonic strike frequencies for a brass prayer bell
+    const partials = [
+      { freq: 880, gain: 0.4, decay: 2.2 },  // Fundamental A5
+      { freq: 1760, gain: 0.25, decay: 1.8 }, // Octave
+      { freq: 2640, gain: 0.15, decay: 1.4 }, // Tierce
+      { freq: 3520, gain: 0.08, decay: 0.9 }, // Quint
+    ];
+
+    partials.forEach(({ freq, gain, decay }) => {
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+
+      gainNode.gain.setValueAtTime(0.001, now);
+      gainNode.gain.exponentialRampToValueAtTime(gain, now + 0.008); // sharp attack
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, now + decay); // natural ringing decay
+
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + decay);
+    });
+  } catch (err) {
+    console.warn('Bell ring notice:', err);
+  }
+}
+
+// 2. Authentic Smartphone Call Ringtone Melody
 export function playPhoneRingtoneCycle() {
+  // Check custom tune first
+  const customTune = localStorage.getItem('salah_custom_audio');
+  if (customTune) {
+    try {
+      const audio = new Audio(customTune);
+      audio.play().catch(() => {});
+      return;
+    } catch (e) {}
+  }
+
   const ctx = getAudioContext();
   if (!ctx) return;
 
@@ -81,16 +138,11 @@ export function stopRingtone() {
   }
 }
 
-// Alias for backwards compatibility
-export const playChime = playPhoneRingtoneCycle;
-
-// Play connected call Takbeer tone
 export function playConnectedTone() {
   const ctx = getAudioContext();
   if (!ctx) return;
   const now = ctx.currentTime;
 
-  // Gentle connected hum
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = 'sine';
@@ -105,6 +157,8 @@ export function playConnectedTone() {
   osc.stop(now + 0.6);
 }
 
+export const playChime = playBellRing;
+
 export async function requestNotificationPermission() {
   if (!('Notification' in window)) return 'unsupported';
   return await Notification.requestPermission();
@@ -112,7 +166,7 @@ export async function requestNotificationPermission() {
 
 export function showNotification({ title, body, icon = '/icon.svg', prayer, sound = true }) {
   if (sound) {
-    playPhoneRingtoneCycle();
+    playBellRing();
   }
 
   if (!('Notification' in window) || Notification.permission !== 'granted') return null;

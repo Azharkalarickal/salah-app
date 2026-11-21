@@ -92,7 +92,6 @@ function computePrayerTimes(settings, targetDate = new Date()) {
 // 1. AUTHENTICATION & USERS
 // ==========================================
 
-// Register
 router.post('/auth/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -100,9 +99,7 @@ router.post('/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Name, email, and password required' });
     }
 
-    // Generate unique user code e.g. USR-4921
     const userCode = 'USR-' + Math.floor(1000 + Math.random() * 9000);
-
     const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
     if (existing.length > 0) {
       return res.status(400).json({ error: 'An account with this email already exists' });
@@ -121,7 +118,6 @@ router.post('/auth/register', async (req, res) => {
   }
 });
 
-// Login
 router.post('/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -143,12 +139,10 @@ router.post('/auth/login', async (req, res) => {
     };
     res.json({ success: true, user });
   } catch (err) {
-    console.error('Login error:', err);
     res.status(500).json({ error: 'Failed to login' });
   }
 });
 
-// Get User Profile
 router.get('/auth/me', async (req, res) => {
   try {
     const userId = req.query.userId || 1;
@@ -247,10 +241,9 @@ router.delete('/admin/users/:id', async (req, res) => {
 });
 
 // ==========================================
-// 3. FAMILY GROUPS & GROUP CHAT
+// 3. FAMILY GROUPS, CHAT & PHOTO SHARING
 // ==========================================
 
-// Create Group
 router.post('/groups/create', async (req, res) => {
   try {
     const { name, userId } = req.body;
@@ -272,12 +265,10 @@ router.post('/groups/create', async (req, res) => {
 
     res.json({ success: true, groupId, groupCode, name });
   } catch (err) {
-    console.error('Error creating group:', err);
     res.status(500).json({ error: 'Failed to create group' });
   }
 });
 
-// Join Group by Code
 router.post('/groups/join', async (req, res) => {
   try {
     const { groupCode, userId } = req.body;
@@ -302,7 +293,6 @@ router.post('/groups/join', async (req, res) => {
   }
 });
 
-// Invite member by User Code
 router.post('/groups/invite', async (req, res) => {
   try {
     const { groupId, targetUserCode } = req.body;
@@ -327,7 +317,6 @@ router.post('/groups/invite', async (req, res) => {
   }
 });
 
-// Get User's Groups
 router.get('/groups/my', async (req, res) => {
   try {
     const userId = req.query.userId || 1;
@@ -345,13 +334,11 @@ router.get('/groups/my', async (req, res) => {
   }
 });
 
-// Group Live Salah & Quran Board
 router.get('/groups/:groupId/board', async (req, res) => {
   try {
     const { groupId } = req.params;
     const dateStr = req.query.date || new Date().toISOString().slice(0, 10);
 
-    // Get all members of the group
     const [members] = await pool.query(
       `SELECT u.id, u.user_code, u.name, u.avatar, gm.role 
        FROM group_members gm
@@ -360,7 +347,6 @@ router.get('/groups/:groupId/board', async (req, res) => {
       [groupId]
     );
 
-    // Fetch today's salah logs for all members
     const [salahLogs] = await pool.query(
       `SELECT user_id, prayer_name, status, completed_at 
        FROM salah_logs 
@@ -368,7 +354,6 @@ router.get('/groups/:groupId/board', async (req, res) => {
       [dateStr]
     );
 
-    // Fetch today's Quran logs for all members
     const [quranLogs] = await pool.query(
       `SELECT user_id, completed, amount_read, surah_name 
        FROM quran_logs 
@@ -402,20 +387,19 @@ router.get('/groups/:groupId/board', async (req, res) => {
 
     res.json({ date: dateStr, members: memberProgress });
   } catch (err) {
-    console.error('Group board error:', err);
     res.status(500).json({ error: 'Failed to load group board' });
   }
 });
 
-// Group Messages (Chat)
+// Group Messages (Chat with photo support)
 router.get('/groups/:groupId/messages', async (req, res) => {
   try {
     const { groupId } = req.params;
     const [rows] = await pool.query(
-      `SELECT id, group_id, user_id, user_name, message, created_at 
+      `SELECT id, group_id, user_id, user_name, message, image, created_at 
        FROM group_messages 
        WHERE group_id = ? 
-       ORDER BY id DESC LIMIT 50`,
+       ORDER BY id DESC LIMIT 60`,
       [groupId]
     );
     res.json(rows.reverse());
@@ -427,14 +411,14 @@ router.get('/groups/:groupId/messages', async (req, res) => {
 router.post('/groups/:groupId/messages', async (req, res) => {
   try {
     const { groupId } = req.params;
-    const { userId, userName, message } = req.body;
-    if (!message || !message.trim()) {
-      return res.status(400).json({ error: 'Message cannot be empty' });
+    const { userId, userName, message, image } = req.body;
+    if ((!message || !message.trim()) && !image) {
+      return res.status(400).json({ error: 'Message or photo is required' });
     }
 
     const [result] = await pool.query(
-      'INSERT INTO group_messages (group_id, user_id, user_name, message) VALUES (?, ?, ?, ?)',
-      [groupId, userId, userName || 'Family Member', message.trim()]
+      'INSERT INTO group_messages (group_id, user_id, user_name, message, image) VALUES (?, ?, ?, ?, ?)',
+      [groupId, userId, userName || 'Family Member', (message || '').trim(), image || null]
     );
 
     res.json({
@@ -442,7 +426,8 @@ router.post('/groups/:groupId/messages', async (req, res) => {
       group_id: groupId,
       user_id: userId,
       user_name: userName || 'Family Member',
-      message: message.trim(),
+      message: (message || '').trim(),
+      image: image || null,
       created_at: new Date(),
     });
   } catch (err) {
@@ -451,7 +436,52 @@ router.post('/groups/:groupId/messages', async (req, res) => {
 });
 
 // ==========================================
-// 4. FULL YEAR INSIGHTS & STATS
+// 4. USER CUSTOM PRAYER / ADHAN TIMES
+// ==========================================
+
+router.get('/salah/custom-times', async (req, res) => {
+  try {
+    const userId = Number(req.query.userId) || 1;
+    const [rows] = await pool.query(
+      'SELECT * FROM user_prayer_times WHERE user_id = ?',
+      [userId]
+    );
+    if (rows.length > 0) {
+      res.json({ useCustom: Boolean(rows[0].use_custom), times: rows[0] });
+    } else {
+      res.json({ useCustom: false, times: null });
+    }
+  } catch (err) {
+    res.json({ useCustom: false, times: null });
+  }
+});
+
+router.put('/salah/custom-times', async (req, res) => {
+  try {
+    const { userId, use_custom, fajr, dhuhr, asr, maghrib, isha } = req.body;
+    const uId = Number(userId) || 1;
+
+    await pool.query(
+      `INSERT INTO user_prayer_times (user_id, use_custom, fajr, dhuhr, asr, maghrib, isha)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         use_custom = VALUES(use_custom),
+         fajr = VALUES(fajr),
+         dhuhr = VALUES(dhuhr),
+         asr = VALUES(asr),
+         maghrib = VALUES(maghrib),
+         isha = VALUES(isha)`,
+      [uId, Boolean(use_custom), fajr || '05:15:00', dhuhr || '12:30:00', asr || '15:45:00', maghrib || '18:15:00', isha || '19:30:00']
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update custom times' });
+  }
+});
+
+// ==========================================
+// 5. FULL YEAR INSIGHTS & STATS
 // ==========================================
 
 router.get('/salah/yearly-stats', async (req, res) => {
@@ -459,7 +489,6 @@ router.get('/salah/yearly-stats', async (req, res) => {
     const year = Number(req.query.year) || new Date().getFullYear();
     const userId = Number(req.query.userId) || 1;
 
-    // Monthly aggregation of salah statuses
     const [monthlySalah] = await pool.query(
       `SELECT MONTH(log_date) as month, status, COUNT(*) as count 
        FROM salah_logs 
@@ -468,7 +497,6 @@ router.get('/salah/yearly-stats', async (req, res) => {
       [year, userId]
     );
 
-    // Monthly Quran pages read
     const [monthlyQuran] = await pool.query(
       `SELECT MONTH(log_date) as month, SUM(amount_read) as total_pages, COUNT(IF(completed = TRUE, 1, NULL)) as days_read
        FROM quran_logs 
@@ -528,16 +556,14 @@ router.get('/salah/yearly-stats', async (req, res) => {
       months: monthsData,
     });
   } catch (err) {
-    console.error('Yearly stats error:', err);
     res.status(500).json({ error: 'Failed to fetch yearly stats' });
   }
 });
 
 // ==========================================
-// 5. PRAYER TIMES & DAILY TRACKING
+// 6. TODAY'S PRAYER & SALAH LOGGING
 // ==========================================
 
-// GET Settings
 router.get('/settings', async (req, res) => {
   try {
     const [prayerRows] = await pool.query('SELECT * FROM prayer_settings WHERE id = 1');
@@ -554,7 +580,6 @@ router.get('/settings', async (req, res) => {
   }
 });
 
-// PUT Prayer Settings
 router.put('/settings/prayer', async (req, res) => {
   try {
     const {
@@ -595,27 +620,45 @@ router.put('/settings/prayer', async (req, res) => {
   }
 });
 
-// GET Today's Salah Status & Times
 router.get('/salah/today', async (req, res) => {
   try {
     const targetDate = req.query.date ? new Date(req.query.date) : new Date();
     const dateStr = targetDate.toISOString().slice(0, 10);
     const userId = Number(req.query.userId) || 1;
 
+    // Check if user has personal custom adhan times
+    const [userCustomRows] = await pool.query(
+      'SELECT * FROM user_prayer_times WHERE user_id = ? AND use_custom = TRUE',
+      [userId]
+    );
+
     const [settingsRows] = await pool.query('SELECT * FROM prayer_settings WHERE id = 1');
     const settings = settingsRows[0] || { city: 'Kochi', country: 'India (Kerala)', latitude: 9.9312, longitude: 76.2673 };
-    const times = computePrayerTimes(settings, targetDate);
+    
+    let times;
+    if (userCustomRows.length > 0) {
+      const uTimes = userCustomRows[0];
+      const pad = (t) => (t ? t.toString().slice(0, 5) : '00:00');
+      times = {
+        fajr: pad(uTimes.fajr),
+        sunrise: '06:15',
+        dhuhr: pad(uTimes.dhuhr),
+        asr: pad(uTimes.asr),
+        maghrib: pad(uTimes.maghrib),
+        isha: pad(uTimes.isha),
+        source: 'user_custom',
+      };
+    } else {
+      times = computePrayerTimes(settings, targetDate);
+    }
 
-    // Fetch existing logs for today for this user
     const [logs] = await pool.query(
       'SELECT prayer_name, status, completed_at, notes FROM salah_logs WHERE log_date = ? AND (user_id = ? OR user_id = 1)',
       [dateStr, userId]
     );
 
     const logMap = {};
-    logs.forEach((l) => {
-      logMap[l.prayer_name] = l;
-    });
+    logs.forEach((l) => { logMap[l.prayer_name] = l; });
 
     const prayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].map((p) => {
       const log = logMap[p] || { status: 'pending', completed_at: null };
@@ -641,7 +684,6 @@ router.get('/salah/today', async (req, res) => {
       prayers,
     });
   } catch (err) {
-    console.warn('Fallback prayer calculations used due to DB notice:', err.message);
     const targetDate = req.query.date ? new Date(req.query.date) : new Date();
     const dateStr = targetDate.toISOString().slice(0, 10);
     const defaultSettings = {
@@ -675,7 +717,6 @@ router.get('/salah/today', async (req, res) => {
   }
 });
 
-// POST Log Salah
 router.post('/salah/log', async (req, res) => {
   try {
     const { prayer_name, status, date, notes, userId } = req.body;
@@ -704,12 +745,10 @@ router.post('/salah/log', async (req, res) => {
 
     res.json({ success: true, logDate, prayer_name, status, completed_at: completedAt });
   } catch (err) {
-    console.error('Error logging salah:', err);
     res.status(500).json({ error: 'Failed to record prayer status' });
   }
 });
 
-// GET Salah History (Last 30 days)
 router.get('/salah/history', async (req, res) => {
   try {
     const limit = Number(req.query.days) || 30;
@@ -739,10 +778,9 @@ router.get('/salah/history', async (req, res) => {
 });
 
 // ==========================================
-// 6. QURAN HABIT TRACKER
+// 7. QURAN HABIT TRACKER
 // ==========================================
 
-// GET Quran Today Status
 router.get('/quran/today', async (req, res) => {
   try {
     const dateStr = req.query.date || new Date().toISOString().slice(0, 10);
@@ -754,7 +792,6 @@ router.get('/quran/today', async (req, res) => {
       [dateStr, userId]
     );
 
-    // Calculate current streak
     const [streakRows] = await pool.query(
       `SELECT log_date, completed FROM quran_logs 
        WHERE completed = TRUE AND (user_id = ? OR user_id = 1)
@@ -799,7 +836,6 @@ router.get('/quran/today', async (req, res) => {
   }
 });
 
-// POST Quran Log
 router.post('/quran/log', async (req, res) => {
   try {
     const { date, completed, amount_read, surah_name, notes, userId } = req.body;
@@ -825,7 +861,6 @@ router.post('/quran/log', async (req, res) => {
   }
 });
 
-// PUT Quran Settings
 router.put('/settings/quran', async (req, res) => {
   try {
     const { daily_goal_type, daily_goal_target, reminder_time, reminder_enabled } = req.body;
@@ -845,7 +880,6 @@ router.put('/settings/quran', async (req, res) => {
   }
 });
 
-// GET Motivation
 router.get('/motivation/:category', async (req, res) => {
   try {
     const { category } = req.params;

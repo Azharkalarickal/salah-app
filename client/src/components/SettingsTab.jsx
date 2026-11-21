@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
-import { Settings, MapPin, Bell, Volume2, Save, Sliders, Check } from 'lucide-react';
+import { Settings, MapPin, Bell, Volume2, Save, Sliders, Check, Clock } from 'lucide-react';
+import { playBellRing } from '../utils/notifications';
 
-export default function SettingsTab({ settings, onSaveSettings, onTestNotif, onTestCallAlert }) {
+export default function SettingsTab({
+  settings,
+  onSaveSettings,
+  onTestNotif,
+  onTestCallAlert,
+  onOpenEditTimes,
+}) {
   const [form, setForm] = useState({
     city: settings?.city || 'Mecca',
     country: settings?.country || 'Saudi Arabia',
@@ -277,6 +284,82 @@ export default function SettingsTab({ settings, onSaveSettings, onTestNotif, onT
             />
             <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
           </label>
+        </div>
+
+        {/* Custom Local Audio Tune Upload */}
+        <div className="pt-2 border-t border-slate-800/80 space-y-2">
+          <label className="text-slate-300 font-semibold block">
+            Custom Local Notification Tune (MP3 / Audio)
+          </label>
+          <p className="text-[11px] text-slate-400">
+            Upload your own local Azan or chime from your device to play for alerts.
+          </p>
+
+          <div className="flex items-center gap-2">
+            <label className="flex-1 cursor-pointer py-2 px-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 text-center text-xs truncate">
+              <span>{localStorage.getItem('salah_custom_audio_name') || '📁 Choose Audio File'}</span>
+              <input
+                type="file"
+                accept="audio/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      const dataUrl = event.target?.result;
+                      if (dataUrl) {
+                        try {
+                          localStorage.setItem('salah_custom_audio', dataUrl);
+                          localStorage.setItem('salah_custom_audio_name', file.name);
+                          alert(`Custom tune "${file.name}" saved!`);
+                          onTestNotif();
+                        } catch (err) {
+                          alert('File too large for local cache. Please select an audio under 4MB.');
+                        }
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+              />
+            </label>
+
+            {localStorage.getItem('salah_custom_audio') && (
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem('salah_custom_audio');
+                  localStorage.removeItem('salah_custom_audio_name');
+                  alert('Reset to default bell ring!');
+                }}
+                className="px-2.5 py-2 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800/60 rounded-xl text-xs"
+              >
+                Reset
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => playBellRing()}
+              className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-800/50 rounded-xl text-xs font-semibold flex items-center gap-1 active:scale-95"
+              title="Test realistic brass bell ring"
+            >
+              <span>🔔 Bell Ring</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Change Adhan Times Quick Access */}
+        <div className="pt-2 border-t border-slate-800/80">
+          <button
+            type="button"
+            onClick={onOpenEditTimes}
+            className="w-full py-2.5 px-3 rounded-xl bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 font-semibold flex items-center justify-center gap-2 active:scale-95 transition"
+          >
+            <Clock size={15} />
+            <span>Change My Daily Adhan Times</span>
+          </button>
         </div>
       </div>
 

@@ -127,14 +127,32 @@ export async function fetchGroupMessages(groupId) {
   return res.json();
 }
 
-export async function sendGroupMessage({ groupId, userId, userName, message }) {
+export async function sendGroupMessage({ groupId, userId, userName, message, image }) {
   const res = await fetch(`${BASE_URL}/groups/${groupId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, userName, message }),
+    body: JSON.stringify({ userId, userName, message, image }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to send message');
+  return data;
+}
+
+// --- USER CUSTOM ADHAN TIMES ---
+export async function fetchUserCustomTimes(userId) {
+  const res = await fetch(`${BASE_URL}/salah/custom-times?userId=${userId || 1}`);
+  if (!res.ok) throw new Error('Failed to fetch custom times');
+  return res.json();
+}
+
+export async function saveUserCustomTimes(payload) {
+  const res = await fetch(`${BASE_URL}/salah/custom-times`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to save custom times');
   return data;
 }
 

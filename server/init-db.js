@@ -38,12 +38,12 @@ export async function initializeDatabase() {
         early_reminder_minutes INT DEFAULT 10,
         enable_notifications BOOLEAN DEFAULT TRUE,
         enable_sound BOOLEAN DEFAULT TRUE,
-        sound_type VARCHAR(50) DEFAULT 'takbeer',
+        sound_type VARCHAR(50) DEFAULT 'bell',
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    // Ensure Kochi is updated as default
+    // Ensure Kochi is updated
     await conn.query(`
       UPDATE prayer_settings SET 
         city = 'Kochi', 
@@ -68,7 +68,21 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    // 3. Admin Auth Table (Default password: 1234)
+    // 3. User Custom Prayer Times (Allows each user to set custom adhan times)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS user_prayer_times (
+        user_id INT PRIMARY KEY,
+        use_custom BOOLEAN DEFAULT TRUE,
+        fajr TIME DEFAULT '05:15:00',
+        dhuhr TIME DEFAULT '12:30:00',
+        asr TIME DEFAULT '15:45:00',
+        maghrib TIME DEFAULT '18:15:00',
+        isha TIME DEFAULT '19:30:00',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // 4. Admin Auth Table
     await conn.query(`
       CREATE TABLE IF NOT EXISTS admin_auth (
         id INT PRIMARY KEY DEFAULT 1,
@@ -81,7 +95,7 @@ export async function initializeDatabase() {
       INSERT IGNORE INTO admin_auth (id, password) VALUES (1, '1234');
     `);
 
-    // 4. Salah Logs Table (With user_id support)
+    // 5. Salah Logs Table
     await conn.query(`
       CREATE TABLE IF NOT EXISTS salah_logs (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -97,11 +111,7 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    try {
-      await conn.query(`ALTER TABLE salah_logs ADD COLUMN user_id INT DEFAULT 1`);
-    } catch (e) {}
-
-    // 5. Quran Settings & Logs
+    // 6. Quran Settings & Logs
     await conn.query(`
       CREATE TABLE IF NOT EXISTS quran_settings (
         id INT PRIMARY KEY DEFAULT 1,
@@ -111,15 +121,6 @@ export async function initializeDatabase() {
         reminder_enabled BOOLEAN DEFAULT TRUE,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-
-    try {
-      await conn.query(`ALTER TABLE quran_settings ADD COLUMN user_id INT DEFAULT 1`);
-    } catch (e) {}
-
-    await conn.query(`
-      INSERT IGNORE INTO quran_settings (id, daily_goal_type, daily_goal_target, reminder_time)
-      VALUES (1, 'pages', 2, '20:30:00');
     `);
 
     await conn.query(`
@@ -137,11 +138,7 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    try {
-      await conn.query(`ALTER TABLE quran_logs ADD COLUMN user_id INT DEFAULT 1`);
-    } catch (e) {}
-
-    // 6. Family Groups Table
+    // 7. Family Groups Table
     await conn.query(`
       CREATE TABLE IF NOT EXISTS family_groups (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -152,7 +149,7 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    // 7. Group Members Table
+    // 8. Group Members Table
     await conn.query(`
       CREATE TABLE IF NOT EXISTS group_members (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -164,7 +161,7 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    // 8. Group Messages (Chat) Table
+    // 9. Group Messages (Chat with photo support)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS group_messages (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -172,11 +169,17 @@ export async function initializeDatabase() {
         user_id INT NOT NULL,
         user_name VARCHAR(100) NOT NULL,
         message TEXT NOT NULL,
+        image MEDIUMTEXT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    // 9. Motivational Messages Table
+    // Add image column if missing
+    try {
+      await conn.query(`ALTER TABLE group_messages ADD COLUMN image MEDIUMTEXT NULL`);
+    } catch (e) {}
+
+    // 10. Motivational Messages Table
     await conn.query(`
       CREATE TABLE IF NOT EXISTS motivational_messages (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -186,7 +189,7 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    console.log('✅ All tables and Kochi, Kerala defaults migrated successfully!');
+    console.log('✅ Database upgraded: user custom times & chat image support active!');
   } catch (err) {
     console.warn('⚠️ Database schema init notice:', err.message);
   } finally {

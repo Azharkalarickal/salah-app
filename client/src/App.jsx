@@ -11,6 +11,7 @@ import CallAlertModal from './components/CallAlertModal';
 import AuthModal from './components/AuthModal';
 import AdminModal from './components/AdminModal';
 import FamilyGroupTab from './components/FamilyGroupTab';
+import EditPrayerTimesModal from './components/EditPrayerTimesModal';
 
 import {
   fetchTodaySalah,
@@ -21,6 +22,9 @@ import {
   logQuranReading,
   updateQuranSettings,
   fetchMotivation,
+  fetchMyGroups,
+  sendGroupMessage,
+  saveUserCustomTimes,
 } from './services/api';
 import {
   requestNotificationPermission,
@@ -53,6 +57,7 @@ export default function App() {
   // Modals
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showEditTimesModal, setShowEditTimesModal] = useState(false);
   const [callAlertData, setCallAlertData] = useState(null);
 
   // Keep track of sent notifications today
@@ -281,8 +286,41 @@ export default function App() {
       await logQuranReading({ ...payload, userId: uId });
       const updatedQuran = await fetchQuranToday(undefined, uId);
       setQuranData(updatedQuran);
+
+      // If user completed their Quran reading, broadcast celebration message in family group chat
+      if (currentUser?.id && payload?.completed) {
+        try {
+          const userGroups = await fetchMyGroups(currentUser.id);
+          if (userGroups && userGroups.length > 0) {
+            const readingText = payload.amount_read
+              ? `📖 Alhamdulillah! I just completed reading ${payload.amount_read} pages of the Holy Quran! 🤲`
+              : `📖 Alhamdulillah! I just completed my daily Quran reading! 🤲`;
+            for (const grp of userGroups) {
+              await sendGroupMessage({
+                groupId: grp.id,
+                userId: currentUser.id,
+                userName: currentUser.name,
+                message: readingText,
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Could not broadcast Quran milestone to groups:', e);
+        }
+      }
     } catch (err) {
       console.error('Failed to update Quran log:', err);
+    }
+  };
+
+  const handleSaveCustomTimes = async (customPayload) => {
+    try {
+      await saveUserCustomTimes(customPayload);
+      const refreshedSalah = await fetchTodaySalah(undefined, currentUser?.id || 1);
+      setSalahData(refreshedSalah);
+    } catch (err) {
+      console.error('Failed to save custom times:', err);
+      throw err;
     }
   };
 
@@ -322,6 +360,7 @@ export default function App() {
         currentUser={currentUser}
         onOpenAuth={() => setShowAuthModal(true)}
         onOpenAdmin={() => setShowAdminModal(true)}
+        onOpenEditTimes={() => setShowEditTimesModal(true)}
       />
 
       <main className="flex-1 max-w-md w-full mx-auto px-4 pt-4 pb-24 space-y-4">
@@ -387,6 +426,7 @@ export default function App() {
                 onSaveSettings={handleSavePrayerSettings}
                 onTestNotif={handleTestNotif}
                 onTestCallAlert={handleTriggerCallAlert}
+                onOpenEditTimes={() => setShowEditTimesModal(true)}
               />
             )}
           </>
@@ -429,6 +469,15 @@ export default function App() {
       <AdminModal
         isOpen={showAdminModal}
         onClose={() => setShowAdminModal(false)}
+      />
+
+      {/* Custom Prayer Times Modal */}
+      <EditPrayerTimesModal
+        isOpen={showEditTimesModal}
+        onClose={() => setShowEditTimesModal(false)}
+        currentPrayers={salahData?.prayers || []}
+        userId={currentUser?.id || 1}
+        onSaveCustomTimes={handleSaveCustomTimes}
       />
     </div>
   );

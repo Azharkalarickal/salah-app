@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, BellOff, MapPin, PhoneCall, User, ShieldAlert } from 'lucide-react';
+import { Bell, BellOff, MapPin, PhoneCall, User, ShieldAlert, Clock } from 'lucide-react';
 
 export default function Navbar({
   city,
@@ -11,6 +11,7 @@ export default function Navbar({
   currentUser,
   onOpenAuth,
   onOpenAdmin,
+  onOpenEditTimes,
 }) {
   const displayCity = city || 'Kochi';
   const displayCountry = country || 'India (Kerala)';
@@ -19,16 +20,30 @@ export default function Navbar({
     <header className="sticky top-0 z-30 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/60 px-4 py-2.5">
       <div className="max-w-md mx-auto flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+          <button
+            onClick={onOpenEditTimes}
+            className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition text-left"
+            title="Click to change prayer times"
+          >
             <MapPin size={13} className="shrink-0" />
             <span className="truncate max-w-[130px]">{displayCity}, {displayCountry}</span>
-          </div>
+            <span className="text-[10px] bg-emerald-950/80 border border-emerald-800/70 text-emerald-300 px-1 rounded">Edit</span>
+          </button>
           <h1 className="text-base font-bold text-slate-100 flex items-center gap-1">
             Salah & Quran
           </h1>
         </div>
 
         <div className="flex items-center gap-1.5">
+          {/* Edit Adhan Times Button */}
+          <button
+            onClick={onOpenEditTimes}
+            className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 transition active:scale-95"
+            title="Change Adhan Times"
+          >
+            <Clock size={15} />
+          </button>
+
           {/* Test Call Alert Button */}
           <button
             onClick={onTriggerCallAlert}
