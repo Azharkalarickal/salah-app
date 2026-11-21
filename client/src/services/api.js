@@ -198,7 +198,7 @@ export async function fetchMyIncomingGroupCall(userId) {
   try {
     const res = await fetch(`${BASE_URL}/groups/calls/my-incoming?userId=${userId || 1}`);
     if (res.ok) return res.json();
-  } catch (e) {}
+  } catch (e) { }
   return { hasCall: false };
 }
 
@@ -303,7 +303,7 @@ export async function fetchMotivation(category = 'general') {
   try {
     const res = await fetch(`${BASE_URL}/motivation/${category}`);
     if (res.ok) return res.json();
-  } catch (e) {}
+  } catch (e) { }
   return {
     message: 'നിശ്ചയമായും നമസ്കാരം വിശ്വാസികൾക്ക് നിർണ്ണയിക്കപ്പെട്ട സമയങ്ങളിൽ നിർബന്ധമാക്കപ്പെട്ട ബാധ്യതയാകുന്നു.',
     source: 'വിശുദ്ധ ഖുർആൻ (സൂറഃ അന്നിസാഅ് 103)',
@@ -314,7 +314,7 @@ export async function fetchHourlyMotivation() {
   try {
     const res = await fetch(`${BASE_URL}/motivation/hourly`);
     if (res.ok) return res.json();
-  } catch (e) {}
+  } catch (e) { }
   return {
     message: 'സമയം വിലപ്പെട്ടതാണ് — ഈ ജീവിതം അല്പസമയത്തെ പരീക്ഷണമാണ്; പരലോകമാണ് ശാശ്വതമായ വീട്.',
     source: 'സമയവും പരലോകവും',
@@ -353,7 +353,7 @@ export async function fetchLatestBroadcast() {
   try {
     const res = await fetch(`${BASE_URL}/notifications/latest`);
     if (res.ok) return res.json();
-  } catch (e) {}
+  } catch (e) { }
   return null;
 }
 

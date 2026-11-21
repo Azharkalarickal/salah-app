@@ -81,6 +81,49 @@ export default function App() {
   const [incomingGroupCall, setIncomingGroupCall] = useState(null);
   const declinedCallIdsRef = useRef(new Set());
 
+  // PWA Direct Installation State
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
+
+  useEffect(() => {
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+      setIsAppInstalled(true);
+    }
+
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+
+    const handleAppInstalled = () => {
+      setIsAppInstalled(true);
+      setInstallPrompt(null);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!installPrompt) {
+      alert(
+        "To install on iPhone / iPad:\n1. Tap the Share button (square with arrow) in Safari\n2. Scroll down and tap 'Add to Home Screen'\n\nTo install on Android:\nTap the 3 dots menu (⋮) in Chrome and select 'Install app' or 'Add to Home screen'."
+      );
+      return;
+    }
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+      setIsAppInstalled(true);
+    }
+  };
+
   // Keep track of sent notifications (prevent repeats)
   const sentAlertsRef = useRef(new Set());
   const notifiedBroadcastIdsRef = useRef(new Set());
@@ -732,6 +775,9 @@ export default function App() {
                 onTestCallAlert={handleTriggerCallAlert}
                 onOpenEditTimes={() => setShowEditTimesModal(true)}
                 onTestHourlyReminder={triggerHourlyReminder}
+                onInstallApp={handleInstallApp}
+                isAppInstalled={isAppInstalled}
+                installPromptAvailable={Boolean(installPrompt)}
               />
             )}
           </>
