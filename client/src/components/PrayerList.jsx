@@ -1,5 +1,6 @@
 import React from 'react';
 import { Check, Users, Clock3, AlertCircle, Circle } from 'lucide-react';
+import { formatTime12 } from '../utils/time';
 
 const PRAYER_META = {
   fajr: { label: 'Fajr', arabic: 'الفجر', desc: 'Dawn Prayer' },
@@ -32,6 +33,7 @@ export default function PrayerList({ prayers, onUpdateStatus, currentPrayerName 
           const meta = PRAYER_META[prayer.name] || { label: prayer.name, arabic: '' };
           const isCurrent = currentPrayerName === prayer.name;
           const isDone = prayer.status === 'completed' || prayer.status === 'jamaah';
+          const time12 = formatTime12(prayer.time);
 
           return (
             <div
@@ -65,8 +67,8 @@ export default function PrayerList({ prayers, onUpdateStatus, currentPrayerName 
                 </div>
 
                 <div className="text-right">
-                  <span className="text-lg font-bold font-mono tracking-tight text-white block">
-                    {prayer.time}
+                  <span className="text-base font-bold font-mono tracking-tight text-white block">
+                    {time12}
                   </span>
                   {isCurrent && (
                     <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-950/80 px-1.5 py-0.5 rounded">

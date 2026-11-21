@@ -7,6 +7,7 @@ import MotivationalBanner from './components/MotivationalBanner';
 import QuranTab from './components/QuranTab';
 import StatsTab from './components/StatsTab';
 import SettingsTab from './components/SettingsTab';
+import CallAlertModal from './components/CallAlertModal';
 
 import {
   fetchTodaySalah,
@@ -35,6 +36,9 @@ export default function App() {
   const [notifPermission, setNotifPermission] = useState(
     'Notification' in window ? Notification.permission : 'unsupported'
   );
+
+  // Incoming Call Alert modal state
+  const [callAlertData, setCallAlertData] = useState(null);
 
   // Keep track of sent notifications today to avoid spamming
   const sentAlertsRef = useRef(new Set());
@@ -88,13 +92,11 @@ export default function App() {
     }
 
     if (!current) {
-      // Before Fajr -> active is yesterday's Isha, next is today's Fajr
       current = prayerMins[prayerMins.length - 1];
       next = prayerMins[0];
     } else {
       const currentIndex = prayerMins.findIndex((p) => p.name === current.name);
       if (currentIndex === prayerMins.length - 1) {
-        // Current is Isha -> next is tomorrow's Fajr
         next = prayerMins[0];
       } else {
         next = prayerMins[currentIndex + 1];
@@ -106,7 +108,7 @@ export default function App() {
 
   const { current: currentPrayer, next: nextPrayer } = computeActiveAndNextPrayer();
 
-  // Notification Engine Interval (runs every 30 seconds)
+  // Notification & Call Alert Engine (runs every 30 seconds)
   useEffect(() => {
     if (!salahData?.prayers || !settings) return;
 
@@ -129,9 +131,16 @@ export default function App() {
         const onTimeKey = `${todayStr}-${prayer.name}-ontime`;
         if (nowMins === prayerMins && !sentAlertsRef.current.has(onTimeKey)) {
           sentAlertsRef.current.add(onTimeKey);
+          
+          // Trigger Call Alert overlay
+          setCallAlertData({
+            prayer,
+            quote: quote || { message: "Hayya 'ala-Salah — Come to Prayer." }
+          });
+
           showNotification({
             title: `Time for ${prayer.name.toUpperCase()} Prayer`,
-            body: `Hayya 'ala-Salah — It is now time for ${prayer.name}. Take a pause to pray.`,
+            body: `Hayya 'ala-Salah — It is now time for ${prayer.name}. Stand before Allah.`,
             prayer: prayer.name,
             sound: enableSound,
           });
@@ -150,9 +159,16 @@ export default function App() {
           sentAlertsRef.current.add(followupKey);
           try {
             const motivation = await fetchMotivation(prayer.name);
+            
+            // Trigger Call Alert screen for follow-up
+            setCallAlertData({
+              prayer,
+              quote: motivation
+            });
+
             showNotification({
               title: `Have you prayed ${prayer.name.toUpperCase()} yet?`,
-              body: motivation.message || `A gentle reminder to pray ${prayer.name}. Stand before Allah.`,
+              body: motivation.message || `A gentle reminder to pray ${prayer.name}. Take 5 minutes for your soul.`,
               prayer: prayer.name,
               sound: enableSound,
             });
@@ -186,7 +202,7 @@ export default function App() {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [salahData, settings, quranData]);
+  }, [salahData, settings, quranData, quote]);
 
   // Request notifications
   const handleRequestNotif = async () => {
@@ -211,9 +227,19 @@ export default function App() {
     });
   };
 
+  // Trigger Incoming Call Alert Screen Simulation
+  const handleTriggerCallAlert = () => {
+    setCallAlertData({
+      prayer: currentPrayer || { name: 'dhuhr', time: '12:30' },
+      quote: quote || {
+        message: 'Success begins with Salah. Take 5 minutes to fulfill your covenant with Allah.',
+        source: "Surah Al-Mu'minun",
+      },
+    });
+  };
+
   const handleUpdateStatus = async (prayerName, newStatus) => {
     try {
-      // Optimistic update
       setSalahData((prev) => ({
         ...prev,
         prayers: prev.prayers.map((p) =>
@@ -224,7 +250,6 @@ export default function App() {
       await logSalahStatus(prayerName, newStatus);
     } catch (err) {
       console.error('Failed to log salah status:', err);
-      // Revert if error
       loadData();
     }
   };
@@ -271,6 +296,7 @@ export default function App() {
         notifPermission={notifPermission}
         onRequestNotif={handleRequestNotif}
         onTestNotif={handleTestNotif}
+        onTriggerCallAlert={handleTriggerCallAlert}
       />
 
       <main className="flex-1 max-w-md w-full mx-auto px-4 pt-4 pb-24 space-y-4">
@@ -323,6 +349,7 @@ export default function App() {
                 settings={settings}
                 onSaveSettings={handleSavePrayerSettings}
                 onTestNotif={handleTestNotif}
+                onTestCallAlert={handleTriggerCallAlert}
               />
             )}
           </>
@@ -330,6 +357,27 @@ export default function App() {
       </main>
 
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Incoming Prayer Call Modal */}
+      {callAlertData && (
+        <CallAlertModal
+          prayer={callAlertData.prayer}
+          quote={callAlertData.quote}
+          onAnswerAndPray={(prayerName) => {
+            handleUpdateStatus(prayerName, 'completed');
+            setCallAlertData(null);
+          }}
+          onDismiss={() => setCallAlertData(null)}
+          onSnooze={() => {
+            setCallAlertData(null);
+            showNotification({
+              title: 'Snoozed 10 Minutes',
+              body: 'You will receive another reminder in 10 minutes.',
+              sound: false,
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Settings, MapPin, Bell, Volume2, Save, Sliders, Check } from 'lucide-react';
 
-export default function SettingsTab({ settings, onSaveSettings, onTestNotif }) {
+export default function SettingsTab({ settings, onSaveSettings, onTestNotif, onTestCallAlert }) {
   const [form, setForm] = useState({
     city: settings?.city || 'Mecca',
     country: settings?.country || 'Saudi Arabia',
@@ -214,13 +214,22 @@ export default function SettingsTab({ settings, onSaveSettings, onTestNotif }) {
             <Bell size={15} className="text-emerald-400" />
             <span>Follow-up & Alerts</span>
           </div>
-          <button
-            type="button"
-            onClick={onTestNotif}
-            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-semibold active:scale-95"
-          >
-            Test Alert
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onTestCallAlert}
+              className="px-2.5 py-1 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/60 rounded-lg font-semibold active:scale-95 flex items-center gap-1"
+            >
+              <span>📞 Test Call</span>
+            </button>
+            <button
+              type="button"
+              onClick={onTestNotif}
+              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-semibold active:scale-95"
+            >
+              Push
+            </button>
+          </div>
         </div>
 
         <div>
