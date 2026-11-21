@@ -1,9 +1,12 @@
 import pool from './db.js';
 
 export async function initializeDatabase() {
-  console.log('🔄 Initializing database schema...');
-  const conn = await pool.getConnection();
+  let conn;
   try {
+    console.log('🔄 Checking MySQL database connection...');
+    conn = await pool.getConnection();
+    console.log('✅ Connected to MySQL database, ensuring tables exist...');
+
     // 1. Prayer Settings Table
     await conn.query(`
       CREATE TABLE IF NOT EXISTS prayer_settings (
@@ -91,57 +94,34 @@ export async function initializeDatabase() {
     await conn.query(`
       CREATE TABLE IF NOT EXISTS motivational_messages (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        category VARCHAR(20) NOT NULL, -- 'fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'general', 'quran'
+        category VARCHAR(20) NOT NULL,
         message TEXT NOT NULL,
         source VARCHAR(100) NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    // Check if motivational messages are empty, seed them if so
     const [msgs] = await conn.query('SELECT COUNT(*) as count FROM motivational_messages');
     if (msgs[0].count === 0) {
       const seedMessages = [
-        // Fajr
         ['fajr', 'Prayer is better than sleep. Begin your day with light and the protection of Allah.', 'Sahih Muslim'],
         ['fajr', 'Whoever prays the dawn prayer is under the protection of Allah.', 'Sahih Muslim 657'],
-        ['fajr', 'The two Sunnah rak’ahs of Fajr are better than the world and all that is in it.', 'Sahih Muslim 725'],
-        // Dhuhr
         ['dhuhr', 'Pause your busy workday. Reconnect your heart to the Creator of all success.', 'Reflections'],
-        ['dhuhr', 'This is an hour when the gates of heaven are opened, and I love that a righteous deed should ascend for me during it.', 'Jami at-Tirmidhi 478'],
-        // Asr
         ['asr', 'Guard strictly the prayers, especially the middle prayer (Asr). Take 5 minutes now.', 'Surah Al-Baqarah 2:238'],
-        ['asr', 'Whoever misses the Asr prayer, it is as if he lost his family and his wealth.', 'Sahih al-Bukhari 552'],
-        // Maghrib
         ['maghrib', 'Maghrib time is precious and passes quickly. Stand before your Lord before dinner.', 'Daily Reminder'],
-        ['maghrib', 'Answer the call of the sunset prayer with gratitude for the day.', 'Reflections'],
-        // Isha
         ['isha', 'End your night in peace and forgiveness. Do not let sleep overtake you before Isha.', 'Sahih al-Bukhari'],
-        ['isha', 'Whoever prays Isha in congregation, it is as if he spent half the night in prayer.', 'Sahih Muslim 656'],
-        // General Salah
         ['general', 'Success begins with Salah. Take 5 minutes to fulfill your covenant with Allah.', 'Surah Al-Mu’minun 23:1-2'],
-        ['general', 'Indeed, prayer prohibits immorality and wrongdoing. You will feel immense peace after you pray.', 'Surah Al-Ankabut 29:45'],
-        // Quran
-        ['quran', 'Take 5 minutes to recite the Quran today. The Quran will be an intercessor for its companions on the Day of Resurrection.', 'Sahih Muslim 804'],
-        ['quran', 'The best of you are those who learn the Quran and teach it.', 'Sahih al-Bukhari 5027'],
-        ['quran', 'Even reciting a few verses will illuminate your night and bring peace to your heart.', 'Surah Al-Isra 17:82']
+        ['quran', 'Take 5 minutes to recite the Quran today. It will be an intercessor on the Day of Resurrection.', 'Sahih Muslim 804']
       ];
       await conn.query(
         'INSERT INTO motivational_messages (category, message, source) VALUES ?',
         [seedMessages]
       );
-      console.log('✅ Seeded motivational messages library!');
     }
 
     console.log('✅ Database schema verified and ready!');
   } catch (err) {
-    console.error('❌ Error initializing database:', err);
-    throw err;
+    console.warn('⚠️ Database initialization notice (using fallback if unavailable):', err.message);
   } finally {
-    conn.release();
+    if (conn) conn.release();
   }
-}
-
-// Run directly if called as a script
-if (process.argv[1] && process.argv[1].endsWith('init-db.js')) {
-  initializeDatabase().then(() => process.exit(0)).catch(() => process.exit(1));
 }

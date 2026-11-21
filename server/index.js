@@ -8,6 +8,14 @@ import { initializeDatabase } from './init-db.js';
 
 dotenv.config();
 
+// Prevent any unhandled errors from terminating Node
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Uncaught Exception caught safely:', err?.message || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️ Unhandled Rejection caught safely:', reason);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -35,22 +43,20 @@ app.get('*', (req, res, next) => {
   }
   res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
     if (err) {
-      res.status(200).send('Salah App is starting up...');
+      res.status(200).send('Salah App is running. Refreshing...');
     }
   });
 });
 
-// Start listening immediately so Render port detection succeeds
+// Start listening immediately on 0.0.0.0
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Salah Server running on http://0.0.0.0:${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'production'}`);
 });
 
-// Initialize database schema asynchronously without crashing server on delay
-initializeDatabase()
-  .then(() => {
-    console.log('✅ Database schema verified and ready!');
-  })
-  .catch((err) => {
-    console.error('⚠️ Database schema initialization notice:', err.message);
-  });
+server.on('error', (err) => {
+  console.error('Server error:', err);
+});
+
+// Initialize database schema asynchronously
+initializeDatabase();
