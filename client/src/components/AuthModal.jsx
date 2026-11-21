@@ -102,7 +102,7 @@ export default function AuthModal({ isOpen, onClose, currentUser, onLoginSuccess
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Brother Ali"
+                  placeholder="Name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
@@ -115,7 +115,7 @@ export default function AuthModal({ isOpen, onClose, currentUser, onLoginSuccess
               <input
                 type="email"
                 required
-                placeholder="you@email.com"
+                placeholder="Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
@@ -127,7 +127,7 @@ export default function AuthModal({ isOpen, onClose, currentUser, onLoginSuccess
               <input
                 type="password"
                 required
-                placeholder="••••••••"
+                placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"

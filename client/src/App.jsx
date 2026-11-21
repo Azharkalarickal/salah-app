@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { X, BellRing } from 'lucide-react';
 import Navbar from './components/Navbar';
 import BottomNav from './components/BottomNav';
 import HeroPrayerCard from './components/HeroPrayerCard';
@@ -25,11 +26,13 @@ import {
   fetchMyGroups,
   sendGroupMessage,
   saveUserCustomTimes,
+  fetchLatestBroadcast,
 } from './services/api';
 import {
   requestNotificationPermission,
   showNotification,
   playChime,
+  playBellRing,
 } from './utils/notifications';
 
 export default function App() {
@@ -59,6 +62,7 @@ export default function App() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showEditTimesModal, setShowEditTimesModal] = useState(false);
   const [callAlertData, setCallAlertData] = useState(null);
+  const [adminAnnouncement, setAdminAnnouncement] = useState(null);
 
   // Keep track of sent notifications today
   const sentAlertsRef = useRef(new Set());
@@ -226,10 +230,41 @@ export default function App() {
           });
         }
       }
+
+      // Check for Admin Broadcast Announcements
+      checkAdminBroadcast();
     }, 30000);
+
+    // Initial check on load
+    checkAdminBroadcast();
 
     return () => clearInterval(interval);
   }, [salahData, settings, quranData, quote]);
+
+  const checkAdminBroadcast = async () => {
+    try {
+      const latest = await fetchLatestBroadcast();
+      if (latest && latest.id) {
+        const lastSeen = localStorage.getItem('salah_last_admin_broadcast_id');
+        if (!lastSeen || Number(lastSeen) < latest.id) {
+          setAdminAnnouncement(latest);
+          playBellRing();
+          showNotification({
+            title: `📢 ${latest.title}`,
+            body: latest.message,
+            sound: true,
+          });
+        }
+      }
+    } catch (e) {}
+  };
+
+  const dismissAdminAnnouncement = () => {
+    if (adminAnnouncement?.id) {
+      localStorage.setItem('salah_last_admin_broadcast_id', String(adminAnnouncement.id));
+    }
+    setAdminAnnouncement(null);
+  };
 
   const handleRequestNotif = async () => {
     const res = await requestNotificationPermission();
@@ -364,6 +399,26 @@ export default function App() {
       />
 
       <main className="flex-1 max-w-md w-full mx-auto px-4 pt-4 pb-24 space-y-4">
+        {/* Admin Broadcast Announcement Banner */}
+        {adminAnnouncement && (
+          <div className="rounded-2xl bg-gradient-to-r from-amber-950/90 via-slate-900 to-slate-950 border border-amber-700/60 p-3.5 flex items-start justify-between gap-3 shadow-xl shadow-amber-950/30 animate-in fade-in">
+            <div className="flex items-start gap-2.5">
+              <span className="text-xl">📢</span>
+              <div>
+                <span className="text-xs font-bold text-amber-300 block">{adminAnnouncement.title}</span>
+                <p className="text-xs text-slate-200 mt-0.5 leading-relaxed">{adminAnnouncement.message}</p>
+              </div>
+            </div>
+            <button
+              onClick={dismissAdminAnnouncement}
+              className="p-1 text-slate-400 hover:text-white rounded-lg transition shrink-0"
+              title="Dismiss announcement"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400 space-y-3">
             <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />

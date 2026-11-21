@@ -535,7 +535,7 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
 
                 <input
                   type="text"
-                  placeholder="Type message or choose a shortcut..."
+                  placeholder="Message"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyDown={(e) => {
@@ -578,7 +578,7 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
             <input
               type="text"
               required
-              placeholder="e.g. Kalarickal Family"
+              placeholder="Group Name"
               value={newGroupName}
               onChange={(e) => setNewGroupName(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
@@ -610,7 +610,7 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
             <input
               type="text"
               required
-              placeholder="Enter Group Code (e.g. FAM-8391)"
+              placeholder="Group Code"
               value={joinGroupCode}
               onChange={(e) => setJoinGroupCode(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono uppercase"
@@ -639,13 +639,10 @@ export default function FamilyGroupTab({ currentUser, onOpenAuth }) {
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleInviteMember} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl max-w-sm w-full space-y-3">
             <h3 className="font-bold text-sm text-white">Invite Family Member</h3>
-            <p className="text-xs text-slate-400">
-              Ask your family member for their User ID (e.g. <span className="font-mono text-emerald-400 font-bold">USR-XXXX</span>) and enter it below:
-            </p>
             <input
               type="text"
               required
-              placeholder="e.g. USR-4921"
+              placeholder="User ID"
               value={inviteUserCode}
               onChange={(e) => setInviteUserCode(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono uppercase"

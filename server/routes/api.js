@@ -62,11 +62,24 @@ function computePrayerTimes(settings, targetDate = new Date()) {
 
   const prayerTimes = new adhan.PrayerTimes(coordinates, targetDate, params);
 
+  // Format in user's device/local timezone (defaulting to Asia/Kolkata for Kerala)
   const formatTime = (dateObj) => {
     if (!dateObj) return '00:00';
-    const hours = String(dateObj.getHours()).padStart(2, '0');
-    const minutes = String(dateObj.getMinutes()).padStart(2, '0');
-    return `${hours}:${minutes}`;
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(dateObj);
+      const h = parts.find((p) => p.type === 'hour')?.value || '00';
+      const m = parts.find((p) => p.type === 'minute')?.value || '00';
+      return `${h}:${m}`;
+    } catch (e) {
+      const hours = String(dateObj.getHours()).padStart(2, '0');
+      const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+      return `${hours}:${minutes}`;
+    }
   };
 
   return {
@@ -880,6 +893,70 @@ router.put('/settings/quran', async (req, res) => {
   }
 });
 
+// ==========================================
+// 8. ADMIN BROADCAST NOTIFICATIONS
+// ==========================================
+
+// POST Admin Send Broadcast Notification
+router.post('/admin/broadcast', async (req, res) => {
+  try {
+    const { title, message } = req.body;
+    if (!title || !message) {
+      return res.status(400).json({ error: 'Title and message are required' });
+    }
+
+    const [result] = await pool.query(
+      'INSERT INTO admin_announcements (title, message) VALUES (?, ?)',
+      [title.trim(), message.trim()]
+    );
+
+    res.json({
+      success: true,
+      broadcast: {
+        id: result.insertId,
+        title: title.trim(),
+        message: message.trim(),
+        created_at: new Date(),
+      },
+    });
+  } catch (err) {
+    console.error('Error sending broadcast:', err);
+    res.status(500).json({ error: 'Failed to send broadcast notification' });
+  }
+});
+
+// GET Admin Broadcasts List
+router.get('/admin/broadcasts', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, title, message, created_at FROM admin_announcements ORDER BY id DESC LIMIT 20'
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch broadcasts' });
+  }
+});
+
+// GET Latest Notification for Users
+router.get('/notifications/latest', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, title, message, created_at FROM admin_announcements ORDER BY id DESC LIMIT 1'
+    );
+    if (rows.length > 0) {
+      res.json(rows[0]);
+    } else {
+      res.json(null);
+    }
+  } catch (err) {
+    res.json(null);
+  }
+});
+
+// ==========================================
+// 9. MALAYALAM HADITH & SALAH MOTIVATION
+// ==========================================
+
 router.get('/motivation/:category', async (req, res) => {
   try {
     const { category } = req.params;
@@ -892,14 +969,14 @@ router.get('/motivation/:category', async (req, res) => {
       res.json(rows[0]);
     } else {
       res.json({
-        message: 'Salah is your direct conversation with Allah. Stand before your Creator with devotion.',
-        source: 'Reflection',
+        message: 'നിശ്ചയമായും നമസ്കാരം വിശ്വാസികൾക്ക് നിർണ്ണയിക്കപ്പെട്ട സമയങ്ങളിൽ നിർബന്ധമാക്കപ്പെട്ട ബാധ്യതയാകുന്നു.',
+        source: 'വിശുദ്ധ ഖുർആൻ (സൂറഃ അന്നിസാഅ് 103)',
       });
     }
   } catch (err) {
     res.json({
-      message: 'Come to prayer, come to success.',
-      source: 'Adhan',
+      message: 'നമസ്കാരം ഇസ്ലാമിന്റെ തൂണാകുന്നു; അത് നിർവ്വഹിച്ചവൻ ദീനിനെ നിലനിർത്തി.',
+      source: 'നബി വചനം (ബൈഹഖി)',
     });
   }
 });

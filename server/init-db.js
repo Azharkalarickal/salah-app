@@ -189,7 +189,41 @@ export async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
-    console.log('✅ Database upgraded: user custom times & chat image support active!');
+    // 11. Admin Announcements / Broadcast Notifications Table
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS admin_announcements (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // Seed Malayalam Hadiths & Quran quotes if table is empty
+    const [msgCount] = await conn.query('SELECT COUNT(*) as count FROM motivational_messages');
+    if (msgCount[0].count === 0) {
+      const malayalamQuotes = [
+        ['general', 'നിശ്ചയമായും നമസ്കാരം വിശ്വാസികൾക്ക് നിർണ്ണയിക്കപ്പെട്ട സമയങ്ങളിൽ നിർബന്ധമാക്കപ്പെട്ട ബാധ്യതയാകുന്നു.', 'വിശുദ്ധ ഖുർആൻ (സൂറഃ അന്നിസാഅ് 103)'],
+        ['general', 'നമസ്കാരം ഇസ്ലാമിന്റെ തൂണാകുന്നു; അത് നിർവ്വഹിച്ചവൻ ദീനിനെ നിലനിർത്തി.', 'നബി വചനം (ബൈഹഖി)'],
+        ['general', 'അന്ത്യദിനത്തിൽ ഒരടിമയോട് ആദ്യമായി വിചാരണ ചെയ്യപ്പെടുന്നത് അവന്റെ നമസ്കാരത്തെ കുറിച്ചായിരിക്കും.', 'നബി വചനം (ജാമിഉത്-തിർമിദി)'],
+        ['general', 'സ്വർഗ്ഗത്തിന്റെ താക്കോൽ നമസ്കാരമാണ്.', 'നബി വചനം (ജാമിഉത്-തിർമിദി)'],
+        ['general', 'അറിയുക, അല്ലാഹുവിന്റെ സ്മരണ കൊണ്ടത്രെ ഹൃദയങ്ങൾക്ക് ശാന്തി കൈവരുന്നത്.', 'വിശുദ്ധ ഖുർആൻ (സൂറഃ അർറഅ്ദ് 28)'],
+        ['general', 'നിങ്ങൾ ക്ഷമ കൊണ്ടും നമസ്കാരം കൊണ്ടും അല്ലാഹുവിന്റെ സഹായം തേടുക.', 'വിശുദ്ധ ഖുർആൻ (സൂറഃ അൽബഖറ 45)'],
+        ['general', 'ഒരാളും ശിർക്കും കുഫ്റും തമ്മിലുള്ള അതിർവരമ്പ് നമസ്കാരം ഉപേക്ഷിക്കലാണ്.', 'നബി വചനം (സ്വഹീഹ് മുസ്ലിം)'],
+        ['fajr', 'ഫജ്ർ നമസ്കാരത്തിന് മുമ്പുള്ള രണ്ട് റക്അത്ത് ഈ ദുനിയാവിനേക്കാളും അതിലുള്ളതിനേക്കാളും ഉത്തമമാണ്.', 'നബി വചനം (സ്വഹീഹ് മുസ്ലിം)'],
+        ['quran', 'ഖുർആൻ പാരായണം ചെയ്യുക; അത് അന്ത്യദിനത്തിൽ അതിന്റെ ആളുകൾക്ക് ശുപാർശകനായി വരുന്നതാണ്.', 'നബി വചനം (സ്വഹീഹ് മുസ്ലിം)'],
+        ['general', 'നിശ്ചയമായും നമസ്കാരം നീചവൃത്തികളിൽ നിന്നും തിന്മകളിൽ നിന്നും തടയുന്നു.', 'വിശുദ്ധ ഖുർആൻ (സൂറഃ അൽഅൻകബൂത് 45)'],
+        ['general', 'ഒരു അടിമ തന്റെ റബ്ബിലേക്ക് ഏറ്റവും അടുക്കുന്ന അവസ്ഥ അവൻ സുജൂദിലായിരിക്കുമ്പോഴാണ്.', 'നബി വചനം (സ്വഹീഹ് മുസ്ലിം)'],
+      ];
+      for (const [cat, msg, src] of malayalamQuotes) {
+        await conn.query(
+          'INSERT INTO motivational_messages (category, message, source) VALUES (?, ?, ?)',
+          [cat, msg, src]
+        );
+      }
+    }
+
+    console.log('✅ Database upgraded: admin announcements & Malayalam hadith seeds active!');
   } catch (err) {
     console.warn('⚠️ Database schema init notice:', err.message);
   } finally {

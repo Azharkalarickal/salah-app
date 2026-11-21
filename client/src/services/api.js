@@ -241,7 +241,33 @@ export async function fetchMotivation(category = 'general') {
     if (res.ok) return res.json();
   } catch (e) {}
   return {
-    message: 'Maintain your prayers with devotion; peace follows true submission.',
-    source: 'Reflection',
+    message: 'നിശ്ചയമായും നമസ്കാരം വിശ്വാസികൾക്ക് നിർണ്ണയിക്കപ്പെട്ട സമയങ്ങളിൽ നിർബന്ധമാക്കപ്പെട്ട ബാധ്യതയാകുന്നു.',
+    source: 'വിശുദ്ധ ഖുർആൻ (സൂറഃ അന്നിസാഅ് 103)',
   };
+}
+
+// --- ADMIN BROADCAST NOTIFICATIONS ---
+export async function sendAdminBroadcast({ title, message }) {
+  const res = await fetch(`${BASE_URL}/admin/broadcast`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, message }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to send notification');
+  return data;
+}
+
+export async function fetchAdminBroadcasts() {
+  const res = await fetch(`${BASE_URL}/admin/broadcasts`);
+  if (!res.ok) throw new Error('Failed to fetch broadcasts');
+  return res.json();
+}
+
+export async function fetchLatestBroadcast() {
+  try {
+    const res = await fetch(`${BASE_URL}/notifications/latest`);
+    if (res.ok) return res.json();
+  } catch (e) {}
+  return null;
 }

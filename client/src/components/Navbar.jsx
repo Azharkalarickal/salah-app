@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bell, BellOff, MapPin, PhoneCall, User, ShieldAlert, Clock } from 'lucide-react';
 
 export default function Navbar({
@@ -16,6 +16,20 @@ export default function Navbar({
   const displayCity = city || 'Kochi';
   const displayCountry = country || 'India (Kerala)';
 
+  // Live device local clock time
+  const [deviceTime, setDeviceTime] = useState(() =>
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setDeviceTime(
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
+      );
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <header className="sticky top-0 z-30 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/60 px-4 py-2.5">
       <div className="max-w-md mx-auto flex items-center justify-between">
@@ -29,9 +43,12 @@ export default function Navbar({
             <span className="truncate max-w-[130px]">{displayCity}, {displayCountry}</span>
             <span className="text-[10px] bg-emerald-950/80 border border-emerald-800/70 text-emerald-300 px-1 rounded">Edit</span>
           </button>
-          <h1 className="text-base font-bold text-slate-100 flex items-center gap-1">
-            Salah & Quran
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-base font-bold text-slate-100">Salah & Quran</h1>
+            <span className="text-[11px] font-mono text-emerald-400/90 bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded-md font-semibold">
+              {deviceTime}
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -72,7 +89,7 @@ export default function Navbar({
           <button
             onClick={onOpenAdmin}
             className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-amber-400 transition active:scale-95"
-            title="Admin Panel (1234)"
+            title="Admin Panel"
           >
             <ShieldAlert size={15} />
           </button>

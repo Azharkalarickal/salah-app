@@ -132,7 +132,7 @@ export default function QuranTab({ quranData, onLogReading, onUpdateSettings }) 
             <label className="text-xs text-slate-400 block mb-1">Surah (Optional)</label>
             <input
               type="text"
-              placeholder="e.g. Al-Kahf, Yasin"
+              placeholder="Surah Name"
               value={surah}
               onChange={(e) => setSurah(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"

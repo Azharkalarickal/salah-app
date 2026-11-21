@@ -9,14 +9,19 @@ import {
   Lock,
   Layers,
   Flame,
-  Award
+  Award,
+  BellRing,
+  Send,
+  Radio
 } from 'lucide-react';
 import {
   adminLogin,
   adminChangePassword,
   fetchAdminStats,
   fetchAdminUsers,
-  deleteUser
+  deleteUser,
+  sendAdminBroadcast,
+  fetchAdminBroadcasts
 } from '../services/api';
 
 export default function AdminModal({ isOpen, onClose }) {
@@ -28,11 +33,18 @@ export default function AdminModal({ isOpen, onClose }) {
   // Admin Data
   const [stats, setStats] = useState(null);
   const [usersList, setUsersList] = useState([]);
+  const [broadcastsList, setBroadcastsList] = useState([]);
 
   // Change Password State
   const [currentPass, setCurrentPass] = useState('');
   const [newPass, setNewPass] = useState('');
   const [passSuccess, setPassSuccess] = useState('');
+
+  // Send Notification State
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [broadcastStatus, setBroadcastStatus] = useState('');
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
 
   if (!isOpen) return null;
 
@@ -45,7 +57,7 @@ export default function AdminModal({ isOpen, onClose }) {
       setAuthorized(true);
       loadAdminData();
     } catch (err) {
-      setErrorMsg(err.message || 'Incorrect password (default is 1234)');
+      setErrorMsg(err.message || 'Incorrect password');
     } finally {
       setLoading(false);
     }
@@ -53,11 +65,38 @@ export default function AdminModal({ isOpen, onClose }) {
 
   const loadAdminData = async () => {
     try {
-      const [s, u] = await Promise.all([fetchAdminStats(), fetchAdminUsers()]);
+      const [s, u, b] = await Promise.all([
+        fetchAdminStats(),
+        fetchAdminUsers(),
+        fetchAdminBroadcasts().catch(() => [])
+      ]);
       setStats(s);
       setUsersList(u);
+      setBroadcastsList(b || []);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleSendBroadcast = async (e) => {
+    e.preventDefault();
+    if (!broadcastTitle.trim() || !broadcastMessage.trim()) return;
+    setSendingBroadcast(true);
+    try {
+      await sendAdminBroadcast({
+        title: broadcastTitle.trim(),
+        message: broadcastMessage.trim()
+      });
+      setBroadcastStatus('Notification sent to all users!');
+      setBroadcastTitle('');
+      setBroadcastMessage('');
+      const updated = await fetchAdminBroadcasts();
+      setBroadcastsList(updated);
+      setTimeout(() => setBroadcastStatus(''), 3000);
+    } catch (err) {
+      alert(err.message || 'Failed to send notification');
+    } finally {
+      setSendingBroadcast(false);
     }
   };
 
@@ -96,7 +135,7 @@ export default function AdminModal({ isOpen, onClose }) {
             </div>
             <div>
               <h2 className="text-base font-bold text-white">Admin Control Panel</h2>
-              <p className="text-xs text-slate-400">System management & security</p>
+              <p className="text-xs text-slate-400">System management & broadcast</p>
             </div>
           </div>
           <button
@@ -115,13 +154,12 @@ export default function AdminModal({ isOpen, onClose }) {
             </div>
             <div>
               <h3 className="text-sm font-bold text-white">Enter Admin Password</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Default password is 1234</p>
             </div>
 
             <div className="max-w-xs mx-auto">
               <input
                 type="password"
-                placeholder="Admin Password"
+                placeholder="Password"
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-center text-white text-sm focus:outline-none focus:border-emerald-500 font-mono tracking-widest"
@@ -161,6 +199,63 @@ export default function AdminModal({ isOpen, onClose }) {
                 <span className="text-lg font-bold font-mono text-amber-400">{stats?.totalQuranLogs || 0}</span>
               </div>
             </div>
+
+            {/* SEND NOTIFICATION TO ALL USERS */}
+            <form onSubmit={handleSendBroadcast} className="p-4 rounded-2xl bg-slate-950 border border-emerald-900/40 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-400">
+                <BellRing size={15} />
+                <span>Send Notification to Users</span>
+              </div>
+
+              <div>
+                <input
+                  type="text"
+                  required
+                  placeholder="Notification Title"
+                  value={broadcastTitle}
+                  onChange={(e) => setBroadcastTitle(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <textarea
+                  rows={2}
+                  required
+                  placeholder="Notification Message"
+                  value={broadcastMessage}
+                  onChange={(e) => setBroadcastMessage(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 resize-none"
+                />
+              </div>
+
+              {broadcastStatus && (
+                <p className="text-xs text-emerald-400 font-semibold">{broadcastStatus}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={sendingBroadcast}
+                className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-50 shadow-md shadow-emerald-500/20"
+              >
+                <Send size={14} />
+                <span>{sendingBroadcast ? 'Sending...' : 'Send Notification to Users'}</span>
+              </button>
+
+              {broadcastsList.length > 0 && (
+                <div className="pt-2 border-t border-slate-850 space-y-1.5">
+                  <span className="text-[10px] font-semibold text-slate-400 block uppercase">Recently Sent</span>
+                  <div className="max-h-28 overflow-y-auto space-y-1.5">
+                    {broadcastsList.slice(0, 3).map((b) => (
+                      <div key={b.id} className="p-2 rounded-lg bg-slate-900/70 border border-slate-800 text-[11px]">
+                        <span className="font-bold text-white block">{b.title}</span>
+                        <span className="text-slate-300 block">{b.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </form>
 
             {/* Change Admin Password */}
             <form onSubmit={handleChangePassword} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
