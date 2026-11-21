@@ -23,6 +23,7 @@ import {
   logQuranReading,
   updateQuranSettings,
   fetchMotivation,
+  fetchHourlyMotivation,
   fetchMyGroups,
   fetchGroupMessages,
   sendGroupMessage,
@@ -354,6 +355,36 @@ export default function App() {
     }
   };
 
+  // Hourly Salah, Time & Akhirah Reminder Engine (User can enable or disable)
+  const triggerHourlyReminder = async () => {
+    try {
+      const motivation = await fetchHourlyMotivation();
+      setQuote(motivation);
+      playBellRing();
+      showNotification({
+        title: '⏳ സമയത്തിന്റെ വിലയും പരലോക സ്മരണയും',
+        body: motivation.message,
+        sound: true,
+      });
+      localStorage.setItem('salah_last_hourly_reminder', String(Date.now()));
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    const hourlyTimer = setInterval(() => {
+      const isEnabled = localStorage.getItem('salah_hourly_reminder_enabled') !== 'false';
+      if (!isEnabled) return;
+
+      const lastReminder = localStorage.getItem('salah_last_hourly_reminder');
+      const now = Date.now();
+      if (!lastReminder || now - Number(lastReminder) >= 60 * 60 * 1000) {
+        triggerHourlyReminder();
+      }
+    }, 60000);
+
+    return () => clearInterval(hourlyTimer);
+  }, []);
+
   const handleRequestNotif = async () => {
     const res = await requestNotificationPermission();
     setNotifPermission(res);
@@ -636,6 +667,7 @@ export default function App() {
                 onTestNotif={handleTestNotif}
                 onTestCallAlert={handleTriggerCallAlert}
                 onOpenEditTimes={() => setShowEditTimesModal(true)}
+                onTestHourlyReminder={triggerHourlyReminder}
               />
             )}
           </>

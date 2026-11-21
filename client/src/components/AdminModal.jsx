@@ -67,6 +67,7 @@ export default function AdminModal({ isOpen, onClose }) {
   const [currentPass, setCurrentPass] = useState('');
   const [newPass, setNewPass] = useState('');
   const [passSuccess, setPassSuccess] = useState('');
+  const [passError, setPassError] = useState('');
 
   // Send Notification State with Expiry
   const [broadcastTitle, setBroadcastTitle] = useState('');
@@ -213,15 +214,20 @@ export default function AdminModal({ isOpen, onClose }) {
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
-    if (!newPass) return;
+    if (!newPass.trim()) return;
+    setPassError('');
+    setPassSuccess('');
     try {
-      await adminChangePassword({ currentPassword: currentPass, newPassword: newPass });
+      await adminChangePassword({
+        currentPassword: currentPass.trim(),
+        newPassword: newPass.trim(),
+      });
       setPassSuccess('Password updated successfully!');
       setCurrentPass('');
       setNewPass('');
       setTimeout(() => setPassSuccess(''), 3000);
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to update password');
+      setPassError(err.message || 'Failed to update password');
     }
   };
 
@@ -583,6 +589,7 @@ export default function AdminModal({ isOpen, onClose }) {
               </div>
 
               {passSuccess && <p className="text-xs text-emerald-400">{passSuccess}</p>}
+              {passError && <p className="text-xs text-rose-400">{passError}</p>}
 
               <button
                 type="submit"

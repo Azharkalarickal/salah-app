@@ -8,7 +8,11 @@ export default function SettingsTab({
   onTestNotif,
   onTestCallAlert,
   onOpenEditTimes,
+  onTestHourlyReminder,
 }) {
+  const [hourlyReminderEnabled, setHourlyReminderEnabled] = useState(
+    () => localStorage.getItem('salah_hourly_reminder_enabled') !== 'false'
+  );
   const [form, setForm] = useState({
     city: settings?.city || 'Mecca',
     country: settings?.country || 'Saudi Arabia',
@@ -284,6 +288,38 @@ export default function SettingsTab({
             />
             <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
           </label>
+        </div>
+
+        {/* Hourly Salah Motivation & Akhirah Reflection Reminder */}
+        <div className="pt-2 border-t border-slate-800/80 space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-slate-200 font-semibold block">Hourly Salah & Akhirah Reminder</span>
+              <span className="text-[10px] text-slate-400 block max-w-[220px]">
+                ഓരോ മണിക്കൂറിലും സമയത്തിന്റെ വിലയും പരലോക സ്മരണയും ഓർമ്മിപ്പിക്കുന്ന സന്ദേശം
+              </span>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hourlyReminderEnabled}
+                onChange={(e) => {
+                  setHourlyReminderEnabled(e.target.checked);
+                  localStorage.setItem('salah_hourly_reminder_enabled', e.target.checked ? 'true' : 'false');
+                }}
+                className="sr-only peer"
+              />
+              <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={onTestHourlyReminder}
+            className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[11px] text-emerald-400 font-medium flex items-center justify-center gap-1.5 transition active:scale-95"
+          >
+            <span>⏳ Test Hourly Akhirah & Time Reminder</span>
+          </button>
         </div>
 
         {/* Custom Local Audio Tune Upload */}

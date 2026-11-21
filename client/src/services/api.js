@@ -246,6 +246,17 @@ export async function fetchMotivation(category = 'general') {
   };
 }
 
+export async function fetchHourlyMotivation() {
+  try {
+    const res = await fetch(`${BASE_URL}/motivation/hourly`);
+    if (res.ok) return res.json();
+  } catch (e) {}
+  return {
+    message: 'സമയം വിലപ്പെട്ടതാണ് — ഈ ജീവിതം അല്പസമയത്തെ പരീക്ഷണമാണ്; പരലോകമാണ് ശാശ്വതമായ വീട്.',
+    source: 'സമയവും പരലോകവും',
+  };
+}
+
 // --- ADMIN BROADCAST NOTIFICATIONS & PRAYER MANAGEMENT ---
 export async function sendAdminBroadcast({ title, message, expiryHours }) {
   const res = await fetch(`${BASE_URL}/admin/broadcast`, {

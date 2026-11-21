@@ -199,17 +199,26 @@ router.post('/admin/login', async (req, res) => {
 router.post('/admin/change-password', async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
+    if (!newPassword || !String(newPassword).trim()) {
+      return res.status(400).json({ error: 'New password cannot be empty' });
+    }
+
     const [rows] = await pool.query('SELECT password FROM admin_auth WHERE id = 1');
     const adminPass = rows[0]?.password || '1234';
 
-    if (currentPassword !== adminPass) {
+    if (String(currentPassword).trim() !== String(adminPass).trim()) {
       return res.status(401).json({ error: 'Current password does not match' });
     }
 
-    await pool.query('UPDATE admin_auth SET password = ? WHERE id = 1', [newPassword]);
+    await pool.query(
+      `INSERT INTO admin_auth (id, password) VALUES (1, ?)
+       ON DUPLICATE KEY UPDATE password = VALUES(password)`,
+      [String(newPassword).trim()]
+    );
     res.json({ success: true, message: 'Admin password updated successfully' });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to update admin password' });
+    console.error('Failed to update admin password:', err);
+    res.status(500).json({ error: 'Failed to update admin password: ' + err.message });
   }
 });
 
@@ -1027,8 +1036,46 @@ router.get('/notifications/latest', async (req, res) => {
 });
 
 // ==========================================
-// 9. MALAYALAM HADITH & SALAH MOTIVATION
+// 9. MALAYALAM HADITH, TIME & AKHIRAH MOTIVATION
 // ==========================================
+
+// GET Hourly Reflection on Time & Life after Death
+router.get('/motivation/hourly', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT message, source FROM motivational_messages WHERE category = "hourly" ORDER BY RAND() LIMIT 1'
+    );
+    if (rows.length > 0) {
+      return res.json(rows[0]);
+    }
+  } catch (e) {}
+
+  const hourlyFallbacks = [
+    {
+      message: 'സമയം വിലപ്പെട്ടതാണ് — ഈ ജീവിതം അല്പസമയത്തെ പരീക്ഷണമാണ്; പരലോകമാണ് ശാശ്വതമായ വീട്. സമയം പാഴാക്കാതെ നമസ്കാരം കൃത്യസമയത്ത് നിർവഹിക്കുക.',
+      source: 'സമയവും പരലോകവും'
+    },
+    {
+      message: 'മരണം എപ്പോൾ വേണമെങ്കിലും മുന്നിലെത്താം. ഖബറിലെ ഇരുട്ടിൽ ആദ്യം വെളിച്ചമായി മാറുന്നത് നിങ്ങളുടെ കൃത്യനിഷ്ഠയുള്ള നമസ്കാരമാണ്.',
+      source: 'പരലോക സ്മരണ'
+    },
+    {
+      message: 'നിങ്ങളുടെ സമയം വെറുതെ പാഴാക്കാതിരിക്കുക. നാളെ അല്ലാഹുവിന്റെ മുന്നിൽ ആദ്യമായി വിചാരണ ചെയ്യപ്പെടുന്നത് നമസ്കാരത്തെ കുറിച്ചായിരിക്കും.',
+      source: 'നബി വചനം (ജാമിഉത്-തിർമിദി)'
+    },
+    {
+      message: 'ഈ ദുനിയാവിന്റെ മായക്കാഴ്ചകളിൽ മുഴുകി സമയം കളയരുത്. മരണശേഷമുള്ള ജീവിതത്തിന് നമസ്കാരം ഒരു കരുതലാക്കുക.',
+      source: 'ആത്മീയ ചിന്ത'
+    },
+    {
+      message: 'അറിയുക, ഐഹിക ജീവിതം വെറും കളിയും നേരമ്പോക്കും മാത്രമാണ്; പരലോക ഭവനമാണ് ശാശ്വതമായ വിജയം.',
+      source: 'വിശുദ്ധ ഖുർആൻ (സൂറഃ അൽഅൻകബൂത് 64)'
+    }
+  ];
+
+  const pick = hourlyFallbacks[Math.floor(Math.random() * hourlyFallbacks.length)];
+  res.json(pick);
+});
 
 router.get('/motivation/:category', async (req, res) => {
   try {
