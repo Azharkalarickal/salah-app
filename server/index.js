@@ -35,23 +35,22 @@ app.get('*', (req, res, next) => {
   }
   res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
     if (err) {
-      res.status(200).send('Salah App API Server is running. Client build in progress.');
+      res.status(200).send('Salah App is starting up...');
     }
   });
 });
 
-// Initialize database schema and start server
-async function startServer() {
-  try {
-    await initializeDatabase();
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Salah Server running on http://localhost:${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-    });
-  } catch (err) {
-    console.error('Fatal error starting server:', err);
-    process.exit(1);
-  }
-}
+// Start listening immediately so Render port detection succeeds
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Salah Server running on http://0.0.0.0:${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'production'}`);
+});
 
-startServer();
+// Initialize database schema asynchronously without crashing server on delay
+initializeDatabase()
+  .then(() => {
+    console.log('✅ Database schema verified and ready!');
+  })
+  .catch((err) => {
+    console.error('⚠️ Database schema initialization notice:', err.message);
+  });
