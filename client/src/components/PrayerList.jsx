@@ -10,7 +10,13 @@ const PRAYER_META = {
   isha: { label: 'Isha', arabic: 'العشاء', desc: 'Night Prayer' },
 };
 
-export default function PrayerList({ prayers, onUpdateStatus, currentPrayerName }) {
+export default function PrayerList({
+  prayers,
+  onUpdateStatus,
+  currentPrayerName,
+  isPastDate = false,
+  selectedDate,
+}) {
   const statusOptions = [
     { id: 'completed', label: 'On Time', icon: Check, color: 'text-emerald-400 bg-emerald-950/80 border-emerald-800' },
     { id: 'jamaah', label: "Jama'ah", icon: Users, color: 'text-blue-400 bg-blue-950/80 border-blue-800' },
@@ -25,21 +31,23 @@ export default function PrayerList({ prayers, onUpdateStatus, currentPrayerName 
     <div className="space-y-3">
       <div className="flex items-center justify-between px-1">
         <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">
-          Today's Salah Schedule
+          {isPastDate ? `Salah Marking (${selectedDate})` : "Today's Salah Schedule"}
         </h2>
-        <span className="text-xs text-slate-500">Unlocks at Azan time</span>
+        <span className="text-xs text-slate-500">
+          {isPastDate ? 'Viewing past marked record' : 'Unlocks at Azan time'}
+        </span>
       </div>
 
       <div className="space-y-2.5">
         {prayers.map((prayer) => {
           const meta = PRAYER_META[prayer.name] || { label: prayer.name, arabic: '' };
-          const isCurrent = currentPrayerName === prayer.name;
+          const isCurrent = !isPastDate && currentPrayerName === prayer.name;
           const isDone = prayer.status === 'completed' || prayer.status === 'jamaah';
           const time12 = formatTime12(prayer.time);
 
-          // Check if prayer time has arrived
-          let hasStarted = true;
-          if (prayer.time) {
+          // Check if prayer time has arrived (past dates are always unlocked for review & marking)
+          let hasStarted = isPastDate;
+          if (!hasStarted && prayer.time) {
             const [h, m] = prayer.time.split(':').map(Number);
             const prayerMins = h * 60 + m;
             hasStarted = currentTotalMins >= prayerMins;

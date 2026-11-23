@@ -38,6 +38,21 @@ export default function StatsTab({ userId }) {
   const weeklyTotal = weeklyStats.totalPrayers || 1;
   const weeklyOnTimeRatio = Math.round(((weeklyStats.completed + weeklyStats.jamaah) / weeklyTotal) * 100) || 0;
 
+  // Group previous logs by date for historical inspection
+  const groupedLogs = React.useMemo(() => {
+    if (!historyData?.logs) return [];
+    const map = {};
+    historyData.logs.forEach((item) => {
+      const d = item.log_date ? String(item.log_date).slice(0, 10) : '';
+      if (!d) return;
+      if (!map[d]) {
+        map[d] = { date: d, prayers: {} };
+      }
+      map[d].prayers[item.prayer_name] = item.status;
+    });
+    return Object.values(map).sort((a, b) => b.date.localeCompare(a.date));
+  }, [historyData?.logs]);
+
   return (
     <div className="space-y-4 pb-20">
       {/* View Mode Toggle */}
@@ -128,6 +143,66 @@ export default function StatsTab({ userId }) {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Previous Days Marked Salah History Log */}
+          <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4 space-y-3">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+              <span>Previous Days History Log</span>
+              <span className="text-[10px] text-slate-400 font-normal">Past 7 Days</span>
+            </h3>
+
+            {groupedLogs.length === 0 ? (
+              <p className="text-xs text-slate-500 py-3 text-center">No marked prayers recorded in this period.</p>
+            ) : (
+              <div className="space-y-2">
+                {groupedLogs.map((day) => {
+                  const prayerNames = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+                  const completedCount = Object.values(day.prayers).filter(
+                    (s) => s === 'completed' || s === 'jamaah'
+                  ).length;
+
+                  return (
+                    <div
+                      key={day.date}
+                      className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between gap-2"
+                    >
+                      <div>
+                        <span className="text-xs font-bold text-white block font-mono">{day.date}</span>
+                        <span className="text-[10px] text-slate-400">
+                          {completedCount} / 5 completed
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {prayerNames.map((p) => {
+                          const status = day.prayers[p];
+                          const color =
+                            status === 'completed'
+                              ? 'bg-emerald-500 text-slate-950 font-bold'
+                              : status === 'jamaah'
+                              ? 'bg-blue-500 text-slate-950 font-bold'
+                              : status === 'late'
+                              ? 'bg-amber-500 text-slate-950 font-bold'
+                              : status === 'missed'
+                              ? 'bg-rose-500 text-white font-bold'
+                              : 'bg-slate-800 text-slate-600 font-normal';
+                          return (
+                            <span
+                              key={p}
+                              title={`${p.toUpperCase()}: ${status || 'unmarked'}`}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] uppercase ${color}`}
+                            >
+                              {p[0]}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </>
       ) : (

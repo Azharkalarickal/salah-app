@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, BellRing, Send } from 'lucide-react';
+import { X, BellRing, Send, Calendar, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import Navbar from './components/Navbar';
 import BottomNav from './components/BottomNav';
 import HeroPrayerCard from './components/HeroPrayerCard';
@@ -34,6 +34,7 @@ import {
   fetchMyIncomingGroupCall,
   joinGroupCall,
   leaveGroupCall,
+  initGuestSession,
 } from './services/api';
 import {
   requestNotificationPermission,
@@ -88,13 +89,28 @@ export default function App() {
   const notifiedBroadcastIdsRef = useRef(new Set());
   const notifiedChatMsgIdsRef = useRef(new Set());
 
+  // Local date in YYYY-MM-DD (Kochi, Kerala / IST)
+  const getTodayDateStr = () => {
+    try {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    } catch (e) {
+      return new Date().toISOString().slice(0, 10);
+    }
+  };
+
+  const [todayDateStr, setTodayDateStr] = useState(getTodayDateStr);
+  const [selectedDate, setSelectedDate] = useState(getTodayDateStr);
+
   // Load initial data
-  const loadData = async (user) => {
-    const uId = user?.id || currentUser?.id || 1;
+  const loadData = async (user, targetDate) => {
+    const activeDate = targetDate || selectedDate || getTodayDateStr();
+    const uId = user?.id || currentUser?.id;
+    if (!uId) return;
+
     try {
       const [todaySalah, quran, appSettings, initialQuote] = await Promise.all([
-        fetchTodaySalah(undefined, uId),
-        fetchQuranToday(undefined, uId),
+        fetchTodaySalah(activeDate, uId),
+        fetchQuranToday(activeDate, uId),
         fetchSettings(),
         fetchMotivation('general'),
       ]);
@@ -110,9 +126,72 @@ export default function App() {
     }
   };
 
+  // Ensure unique session per device so no users ever share User ID 1
   useEffect(() => {
-    loadData();
-  }, [currentUser]);
+    async function ensureUserSession() {
+      if (currentUser?.id) {
+        loadData(currentUser, selectedDate);
+        return;
+      }
+
+      let deviceId = localStorage.getItem('salah_device_id');
+      if (!deviceId) {
+        deviceId = 'dev_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
+        localStorage.setItem('salah_device_id', deviceId);
+      }
+
+      try {
+        const guestRes = await initGuestSession(deviceId);
+        if (guestRes?.user) {
+          setCurrentUser(guestRes.user);
+          localStorage.setItem('salah_user', JSON.stringify(guestRes.user));
+          loadData(guestRes.user, selectedDate);
+          return;
+        }
+      } catch (err) {
+        console.warn('Guest session fallback:', err);
+      }
+      loadData(null, selectedDate);
+    }
+
+    ensureUserSession();
+  }, []);
+
+  // When selectedDate changes, fetch that specific date's marked salah
+  useEffect(() => {
+    if (currentUser?.id && selectedDate) {
+      fetchTodaySalah(selectedDate, currentUser.id)
+        .then((data) => setSalahData(data))
+        .catch((e) => console.error('Failed to load date salah:', e));
+    }
+  }, [selectedDate, currentUser?.id]);
+
+  // Midnight Day Rollover Watcher (each day fresh pending salah)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const currentToday = getTodayDateStr();
+      if (currentToday !== todayDateStr) {
+        setTodayDateStr(currentToday);
+        setSelectedDate((prev) => (prev === todayDateStr ? currentToday : prev));
+      }
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [todayDateStr]);
+
+  // Date Navigation Helpers
+  const handleNavigateDate = (offsetDays) => {
+    const [y, m, d] = selectedDate.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    dateObj.setDate(dateObj.getDate() + offsetDays);
+    const newDateStr = new Intl.DateTimeFormat('en-CA').format(dateObj);
+    setSelectedDate(newDateStr);
+  };
+
+  const getYesterdayDateStr = () => {
+    const [y, m, d] = todayDateStr.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d - 1);
+    return new Intl.DateTimeFormat('en-CA').format(dateObj);
+  };
 
   // 24/7 Render Keep-Alive Client Pinger (Pings every 12 minutes so Render never sleeps)
   useEffect(() => {
@@ -141,16 +220,29 @@ export default function App() {
     try {
       localStorage.setItem('salah_user', JSON.stringify(user));
     } catch (e) { }
-    loadData(user);
+    loadData(user, selectedDate);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    localStorage.removeItem('salah_user');
     setCurrentUser(null);
-    try {
-      localStorage.removeItem('salah_user');
-    } catch (e) { }
     setShowAuthModal(false);
-    loadData(null);
+
+    let deviceId = localStorage.getItem('salah_device_id');
+    if (!deviceId) {
+      deviceId = 'dev_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
+      localStorage.setItem('salah_device_id', deviceId);
+    }
+    try {
+      const guestRes = await initGuestSession(deviceId);
+      if (guestRes?.user) {
+        setCurrentUser(guestRes.user);
+        localStorage.setItem('salah_user', JSON.stringify(guestRes.user));
+        loadData(guestRes.user, selectedDate);
+        return;
+      }
+    } catch (e) {}
+    loadData(null, selectedDate);
   };
 
   // Compute active & next prayer from today's times
@@ -512,18 +604,21 @@ export default function App() {
         ),
       }));
 
-      await logSalahStatus(prayerName, newStatus, undefined, uId);
+      await logSalahStatus(prayerName, newStatus, selectedDate, uId);
     } catch (err) {
       console.error('Failed to log salah status:', err);
-      loadData();
+      if (currentUser?.id) {
+        const fresh = await fetchTodaySalah(selectedDate, currentUser.id);
+        setSalahData(fresh);
+      }
     }
   };
 
   const handleLogQuran = async (payload) => {
     const uId = currentUser?.id || 1;
     try {
-      await logQuranReading({ ...payload, userId: uId });
-      const updatedQuran = await fetchQuranToday(undefined, uId);
+      await logQuranReading({ ...payload, date: selectedDate, userId: uId });
+      const updatedQuran = await fetchQuranToday(selectedDate, uId);
       setQuranData(updatedQuran);
 
       // If user completed their Quran reading, broadcast celebration message in family group chat
@@ -706,6 +801,84 @@ export default function App() {
                   isCompleted={currentPrayerIsCompleted}
                 />
 
+                {/* Day Switcher / Previous Days Navigator */}
+                <div className="flex items-center justify-between p-2.5 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-sm">
+                  <button
+                    onClick={() => handleNavigateDate(-1)}
+                    className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition active:scale-95 cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                    title="Previous Day"
+                  >
+                    <ChevronLeft size={16} />
+                    <span>Prev</span>
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs font-bold text-white cursor-pointer hover:border-emerald-500/50 transition">
+                      <Calendar size={13} className="text-emerald-400" />
+                      <span>
+                        {selectedDate === todayDateStr
+                          ? 'Today'
+                          : selectedDate === getYesterdayDateStr()
+                          ? 'Yesterday'
+                          : selectedDate}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-normal font-mono">
+                        ({selectedDate})
+                      </span>
+                      <input
+                        type="date"
+                        value={selectedDate}
+                        max={todayDateStr}
+                        onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+                        className="sr-only"
+                      />
+                    </label>
+
+                    {selectedDate !== todayDateStr && (
+                      <button
+                        onClick={() => setSelectedDate(todayDateStr)}
+                        className="px-2.5 py-1 rounded-xl bg-emerald-950/90 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/80 text-[11px] font-semibold transition active:scale-95 cursor-pointer flex items-center gap-1"
+                        title="Jump back to today"
+                      >
+                        <RotateCcw size={11} />
+                        <span>Today</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => handleNavigateDate(1)}
+                    disabled={selectedDate >= todayDateStr}
+                    className={`p-2 rounded-xl transition active:scale-95 cursor-pointer flex items-center gap-1 text-xs font-semibold ${
+                      selectedDate >= todayDateStr
+                        ? 'opacity-40 cursor-not-allowed text-slate-600 bg-slate-900'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
+                    }`}
+                    title="Next Day"
+                  >
+                    <span>Next</span>
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+
+                {/* Info banner when viewing a past date */}
+                {selectedDate !== todayDateStr && (
+                  <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-800/40 text-amber-200/90 text-xs flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Calendar size={14} className="text-amber-400 shrink-0" />
+                      <span>
+                        Viewing marked Salah for <b>{selectedDate === getYesterdayDateStr() ? 'Yesterday' : selectedDate}</b>
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setSelectedDate(todayDateStr)}
+                      className="text-xs text-amber-300 underline font-semibold cursor-pointer shrink-0 ml-2"
+                    >
+                      Go to Today
+                    </button>
+                  </div>
+                )}
+
                 <MotivationalBanner
                   quote={quote}
                   onRefresh={handleRefreshQuote}
@@ -716,6 +889,8 @@ export default function App() {
                   prayers={salahData?.prayers || []}
                   onUpdateStatus={handleUpdateStatus}
                   currentPrayerName={currentPrayer?.name}
+                  isPastDate={selectedDate < todayDateStr}
+                  selectedDate={selectedDate}
                 />
               </>
             )}

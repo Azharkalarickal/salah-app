@@ -31,6 +31,17 @@ export async function fetchUserProfile(userId) {
   return res.json();
 }
 
+export async function initGuestSession(deviceId) {
+  const res = await fetch(`${BASE_URL}/auth/guest-session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to initialize session');
+  return data;
+}
+
 // --- ADMIN PANEL ---
 export async function adminLogin(password) {
   const res = await fetch(`${BASE_URL}/admin/login`, {

@@ -4,6 +4,14 @@ import * as adhan from 'adhan';
 
 const router = express.Router();
 
+function getLocalDateStr(dateInput) {
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim())) {
+    return dateInput.trim();
+  }
+  const d = dateInput ? new Date(dateInput) : new Date();
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
+}
+
 // Helper: Calculate prayer times based on settings and date
 function computePrayerTimes(settings, targetDate = new Date()) {
   if (settings?.use_custom_times) {
@@ -170,6 +178,46 @@ router.get('/auth/me', async (req, res) => {
     }
   } catch (err) {
     res.json({ id: 1, user_code: 'USR-1001', name: 'User', email: 'user@salah.app' });
+  }
+});
+
+// Create or retrieve a dedicated isolated guest profile for an anonymous device
+router.post('/auth/guest-session', async (req, res) => {
+  try {
+    const { deviceId } = req.body;
+    if (!deviceId) {
+      return res.status(400).json({ error: 'deviceId is required' });
+    }
+
+    const cleanDeviceId = String(deviceId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
+    const guestEmail = `guest_${cleanDeviceId}@salah.app`;
+
+    const [existing] = await pool.query(
+      'SELECT id, user_code, name, email, avatar FROM users WHERE email = ?',
+      [guestEmail]
+    );
+
+    if (existing.length > 0) {
+      return res.json({ success: true, user: existing[0] });
+    }
+
+    const guestCode = 'GST-' + Math.floor(1000 + Math.random() * 9000);
+    const [result] = await pool.query(
+      'INSERT INTO users (user_code, name, email, password, avatar) VALUES (?, ?, ?, ?, ?)',
+      [guestCode, 'Guest User', guestEmail, 'guest_pass', '🕌']
+    );
+
+    const user = {
+      id: result.insertId,
+      user_code: guestCode,
+      name: 'Guest User',
+      email: guestEmail,
+      avatar: '🕌',
+    };
+    res.json({ success: true, user });
+  } catch (err) {
+    console.error('Guest session creation error:', err);
+    res.status(500).json({ error: 'Failed to create guest session' });
   }
 });
 
@@ -745,7 +793,7 @@ router.get('/salah/yearly-stats', async (req, res) => {
     const [monthlySalah] = await pool.query(
       `SELECT MONTH(log_date) as month, status, COUNT(*) as count 
        FROM salah_logs 
-       WHERE YEAR(log_date) = ? AND (user_id = ? OR user_id = 1)
+       WHERE YEAR(log_date) = ? AND user_id = ?
        GROUP BY MONTH(log_date), status`,
       [year, userId]
     );
@@ -753,7 +801,7 @@ router.get('/salah/yearly-stats', async (req, res) => {
     const [monthlyQuran] = await pool.query(
       `SELECT MONTH(log_date) as month, SUM(amount_read) as total_pages, COUNT(IF(completed = TRUE, 1, NULL)) as days_read
        FROM quran_logs 
-       WHERE YEAR(log_date) = ? AND (user_id = ? OR user_id = 1)
+       WHERE YEAR(log_date) = ? AND user_id = ?
        GROUP BY MONTH(log_date)`,
       [year, userId]
     );
@@ -875,8 +923,8 @@ router.put('/settings/prayer', async (req, res) => {
 
 router.get('/salah/today', async (req, res) => {
   try {
-    const targetDate = req.query.date ? new Date(req.query.date) : new Date();
-    const dateStr = targetDate.toISOString().slice(0, 10);
+    const dateStr = getLocalDateStr(req.query.date);
+    const targetDate = new Date(`${dateStr}T12:00:00+05:30`);
     const userId = Number(req.query.userId) || 1;
 
     // Check if user has personal custom adhan times
@@ -887,7 +935,7 @@ router.get('/salah/today', async (req, res) => {
 
     const [settingsRows] = await pool.query('SELECT * FROM prayer_settings WHERE id = 1');
     const settings = settingsRows[0] || { city: 'Kochi', country: 'India (Kerala)', latitude: 9.9312, longitude: 76.2673 };
-    
+
     let times;
     if (userCustomRows.length > 0) {
       const uTimes = userCustomRows[0];
@@ -906,7 +954,7 @@ router.get('/salah/today', async (req, res) => {
     }
 
     const [logs] = await pool.query(
-      'SELECT prayer_name, status, completed_at, notes FROM salah_logs WHERE log_date = ? AND (user_id = ? OR user_id = 1)',
+      'SELECT prayer_name, status, completed_at, notes FROM salah_logs WHERE log_date = ? AND user_id = ?',
       [dateStr, userId]
     );
 
@@ -937,8 +985,8 @@ router.get('/salah/today', async (req, res) => {
       prayers,
     });
   } catch (err) {
-    const targetDate = req.query.date ? new Date(req.query.date) : new Date();
-    const dateStr = targetDate.toISOString().slice(0, 10);
+    const dateStr = getLocalDateStr(req.query.date);
+    const targetDate = new Date(`${dateStr}T12:00:00+05:30`);
     const defaultSettings = {
       city: 'Kochi',
       country: 'India (Kerala)',
@@ -973,7 +1021,7 @@ router.get('/salah/today', async (req, res) => {
 router.post('/salah/log', async (req, res) => {
   try {
     const { prayer_name, status, date, notes, userId } = req.body;
-    const logDate = date || new Date().toISOString().slice(0, 10);
+    const logDate = getLocalDateStr(date);
     const currentUserId = Number(userId) || 1;
     const validPrayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 
@@ -1010,7 +1058,7 @@ router.get('/salah/history', async (req, res) => {
     const [rows] = await pool.query(
       `SELECT log_date, prayer_name, status, completed_at 
        FROM salah_logs 
-       WHERE log_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY) AND (user_id = ? OR user_id = 1)
+       WHERE log_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY) AND user_id = ?
        ORDER BY log_date DESC, id ASC`,
       [limit, userId]
     );
@@ -1036,18 +1084,18 @@ router.get('/salah/history', async (req, res) => {
 
 router.get('/quran/today', async (req, res) => {
   try {
-    const dateStr = req.query.date || new Date().toISOString().slice(0, 10);
+    const dateStr = getLocalDateStr(req.query.date);
     const userId = Number(req.query.userId) || 1;
 
     const [settings] = await pool.query('SELECT * FROM quran_settings WHERE id = 1');
     const [logs] = await pool.query(
-      'SELECT * FROM quran_logs WHERE log_date = ? AND (user_id = ? OR user_id = 1)',
+      'SELECT * FROM quran_logs WHERE log_date = ? AND user_id = ?',
       [dateStr, userId]
     );
 
     const [streakRows] = await pool.query(
       `SELECT log_date, completed FROM quran_logs 
-       WHERE completed = TRUE AND (user_id = ? OR user_id = 1)
+       WHERE completed = TRUE AND user_id = ?
        ORDER BY log_date DESC LIMIT 60`,
       [userId]
     );
@@ -1302,7 +1350,7 @@ router.get('/motivation/hourly', async (req, res) => {
     if (rows.length > 0) {
       return res.json(rows[0]);
     }
-  } catch (e) {}
+  } catch (e) { }
 
   const hourlyFallbacks = [
     {
