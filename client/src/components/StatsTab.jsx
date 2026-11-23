@@ -9,11 +9,12 @@ import {
   Calendar,
   BookOpen,
   TrendingUp,
-  Sparkles
+  Sparkles,
+  LogIn
 } from 'lucide-react';
 import { fetchSalahHistory, fetchYearlyStats } from '../services/api';
 
-export default function StatsTab({ userId }) {
+export default function StatsTab({ userId, onOpenAuth }) {
   const [viewMode, setViewMode] = useState('weekly'); // 'weekly' | 'yearly'
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [historyData, setHistoryData] = useState(null);
@@ -21,6 +22,12 @@ export default function StatsTab({ userId }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!userId) {
+      setLoading(false);
+      setHistoryData(null);
+      setYearlyData(null);
+      return;
+    }
     setLoading(true);
     Promise.all([
       fetchSalahHistory(7, userId),
@@ -33,6 +40,29 @@ export default function StatsTab({ userId }) {
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
   }, [selectedYear, userId]);
+
+  if (!userId) {
+    return (
+      <div className="py-12 px-4 text-center space-y-4 text-slate-100">
+        <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto text-3xl">
+          📊
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-white">Salah & Quran Insights</h2>
+          <p className="text-xs text-slate-400 max-w-xs mx-auto mt-1">
+            Sign in to track your personal 7-day logs, 365-day monthly breakdowns, and Quran recitation achievements!
+          </p>
+        </div>
+        <button
+          onClick={onOpenAuth}
+          className="px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-2xl shadow-lg shadow-emerald-500/20 flex items-center gap-2 mx-auto active:scale-95 transition"
+        >
+          <LogIn size={15} />
+          <span>Sign In to View Insights</span>
+        </button>
+      </div>
+    );
+  }
 
   const weeklyStats = historyData?.stats || { completed: 0, jamaah: 0, late: 0, missed: 0, totalPrayers: 0 };
   const weeklyTotal = weeklyStats.totalPrayers || 1;

@@ -34,7 +34,6 @@ import {
   fetchMyIncomingGroupCall,
   joinGroupCall,
   leaveGroupCall,
-  initGuestSession,
 } from './services/api';
 import {
   requestNotificationPermission,
@@ -57,11 +56,19 @@ export default function App() {
     'Notification' in window ? Notification.permission : 'unsupported'
   );
 
-  // User Authentication State
+  // User Authentication State (No guest user)
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = localStorage.getItem('salah_user');
-      return saved ? JSON.parse(saved) : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.user_code?.startsWith('GST') || parsed?.email?.startsWith('guest_')) {
+          localStorage.removeItem('salah_user');
+          return null;
+        }
+        return parsed;
+      }
+      return null;
     } catch (e) {
       return null;
     }
@@ -104,8 +111,7 @@ export default function App() {
   // Load initial data
   const loadData = async (user, targetDate) => {
     const activeDate = targetDate || selectedDate || getTodayDateStr();
-    const uId = user?.id || currentUser?.id;
-    if (!uId) return;
+    const uId = user?.id || currentUser?.id || null;
 
     try {
       const [todaySalah, quran, appSettings, initialQuote] = await Promise.all([
@@ -126,35 +132,22 @@ export default function App() {
     }
   };
 
-  // Ensure unique session per device so no users ever share User ID 1
+  // Initial load
   useEffect(() => {
-    async function ensureUserSession() {
-      if (currentUser?.id) {
-        loadData(currentUser, selectedDate);
-        return;
-      }
-
-      let deviceId = localStorage.getItem('salah_device_id');
-      if (!deviceId) {
-        deviceId = 'dev_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
-        localStorage.setItem('salah_device_id', deviceId);
-      }
-
+    // Purge any stored guest session
+    const saved = localStorage.getItem('salah_user');
+    if (saved) {
       try {
-        const guestRes = await initGuestSession(deviceId);
-        if (guestRes?.user) {
-          setCurrentUser(guestRes.user);
-          localStorage.setItem('salah_user', JSON.stringify(guestRes.user));
-          loadData(guestRes.user, selectedDate);
+        const parsed = JSON.parse(saved);
+        if (parsed?.user_code?.startsWith('GST') || parsed?.email?.startsWith('guest_')) {
+          localStorage.removeItem('salah_user');
+          setCurrentUser(null);
+          loadData(null, selectedDate);
           return;
         }
-      } catch (err) {
-        console.warn('Guest session fallback:', err);
-      }
-      loadData(null, selectedDate);
+      } catch (e) {}
     }
-
-    ensureUserSession();
+    loadData(currentUser, selectedDate);
   }, []);
 
   // When selectedDate changes, fetch that specific date's marked salah
@@ -226,22 +219,7 @@ export default function App() {
   const handleLogout = async () => {
     localStorage.removeItem('salah_user');
     setCurrentUser(null);
-    setShowAuthModal(false);
-
-    let deviceId = localStorage.getItem('salah_device_id');
-    if (!deviceId) {
-      deviceId = 'dev_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
-      localStorage.setItem('salah_device_id', deviceId);
-    }
-    try {
-      const guestRes = await initGuestSession(deviceId);
-      if (guestRes?.user) {
-        setCurrentUser(guestRes.user);
-        localStorage.setItem('salah_user', JSON.stringify(guestRes.user));
-        loadData(guestRes.user, selectedDate);
-        return;
-      }
-    } catch (e) {}
+    setShowAuthModal(true);
     loadData(null, selectedDate);
   };
 
@@ -595,7 +573,11 @@ export default function App() {
   };
 
   const handleUpdateStatus = async (prayerName, newStatus) => {
-    const uId = currentUser?.id || 1;
+    if (!currentUser?.id) {
+      setShowAuthModal(true);
+      return;
+    }
+    const uId = currentUser.id;
     try {
       setSalahData((prev) => ({
         ...prev,
@@ -615,7 +597,11 @@ export default function App() {
   };
 
   const handleLogQuran = async (payload) => {
-    const uId = currentUser?.id || 1;
+    if (!currentUser?.id) {
+      setShowAuthModal(true);
+      return;
+    }
+    const uId = currentUser.id;
     try {
       await logQuranReading({ ...payload, date: selectedDate, userId: uId });
       const updatedQuran = await fetchQuranToday(selectedDate, uId);
@@ -648,9 +634,13 @@ export default function App() {
   };
 
   const handleSaveCustomTimes = async (customPayload) => {
+    if (!currentUser?.id) {
+      setShowAuthModal(true);
+      return;
+    }
     try {
       await saveUserCustomTimes(customPayload);
-      const refreshedSalah = await fetchTodaySalah(undefined, currentUser?.id || 1);
+      const refreshedSalah = await fetchTodaySalah(selectedDate, currentUser.id);
       setSalahData(refreshedSalah);
     } catch (err) {
       console.error('Failed to save custom times:', err);
@@ -662,7 +652,7 @@ export default function App() {
     try {
       const res = await updatePrayerSettings(newSettings);
       setSettings(res.settings);
-      const refreshedSalah = await fetchTodaySalah(undefined, currentUser?.id || 1);
+      const refreshedSalah = await fetchTodaySalah(selectedDate, currentUser?.id || null);
       setSalahData(refreshedSalah);
     } catch (err) {
       console.error('Failed to save prayer settings:', err);
@@ -913,14 +903,19 @@ export default function App() {
                 onLogReading={handleLogQuran}
                 onUpdateSettings={async (payload) => {
                   await updateQuranSettings(payload);
-                  const q = await fetchQuranToday(undefined, currentUser?.id || 1);
+                  const q = await fetchQuranToday(undefined, currentUser?.id || null);
                   setQuranData(q);
                 }}
               />
             )}
 
             {/* INSIGHTS / STATS TAB (Includes Full Year Data Charts) */}
-            {activeTab === 'stats' && <StatsTab userId={currentUser?.id || 1} />}
+            {activeTab === 'stats' && (
+              <StatsTab
+                userId={currentUser?.id}
+                onOpenAuth={() => setShowAuthModal(true)}
+              />
+            )}
 
             {/* SETTINGS TAB */}
             {activeTab === 'settings' && (
@@ -980,7 +975,7 @@ export default function App() {
         isOpen={showEditTimesModal}
         onClose={() => setShowEditTimesModal(false)}
         currentPrayers={salahData?.prayers || []}
-        userId={currentUser?.id || 1}
+        userId={currentUser?.id}
         onSaveCustomTimes={handleSaveCustomTimes}
       />
 

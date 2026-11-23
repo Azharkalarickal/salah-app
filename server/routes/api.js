@@ -166,7 +166,10 @@ router.post('/auth/login', async (req, res) => {
 
 router.get('/auth/me', async (req, res) => {
   try {
-    const userId = req.query.userId || 1;
+    const userId = req.query.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     const [rows] = await pool.query(
       'SELECT id, user_code, name, email, avatar, created_at FROM users WHERE id = ?',
       [userId]
@@ -174,50 +177,10 @@ router.get('/auth/me', async (req, res) => {
     if (rows.length > 0) {
       res.json(rows[0]);
     } else {
-      res.json({ id: 1, user_code: 'USR-GUEST', name: 'Guest User', email: 'guest@salah.app' });
+      res.status(404).json({ error: 'User not found' });
     }
   } catch (err) {
-    res.json({ id: 1, user_code: 'USR-1001', name: 'User', email: 'user@salah.app' });
-  }
-});
-
-// Create or retrieve a dedicated isolated guest profile for an anonymous device
-router.post('/auth/guest-session', async (req, res) => {
-  try {
-    const { deviceId } = req.body;
-    if (!deviceId) {
-      return res.status(400).json({ error: 'deviceId is required' });
-    }
-
-    const cleanDeviceId = String(deviceId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
-    const guestEmail = `guest_${cleanDeviceId}@salah.app`;
-
-    const [existing] = await pool.query(
-      'SELECT id, user_code, name, email, avatar FROM users WHERE email = ?',
-      [guestEmail]
-    );
-
-    if (existing.length > 0) {
-      return res.json({ success: true, user: existing[0] });
-    }
-
-    const guestCode = 'GST-' + Math.floor(1000 + Math.random() * 9000);
-    const [result] = await pool.query(
-      'INSERT INTO users (user_code, name, email, password, avatar) VALUES (?, ?, ?, ?, ?)',
-      [guestCode, 'Guest User', guestEmail, 'guest_pass', '🕌']
-    );
-
-    const user = {
-      id: result.insertId,
-      user_code: guestCode,
-      name: 'Guest User',
-      email: guestEmail,
-      avatar: '🕌',
-    };
-    res.json({ success: true, user });
-  } catch (err) {
-    console.error('Guest session creation error:', err);
-    res.status(500).json({ error: 'Failed to create guest session' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -742,7 +705,10 @@ router.get('/groups/calls/my-incoming', async (req, res) => {
 
 router.get('/salah/custom-times', async (req, res) => {
   try {
-    const userId = Number(req.query.userId) || 1;
+    const userId = req.query.userId ? Number(req.query.userId) : null;
+    if (!userId) {
+      return res.json({ useCustom: false, times: null });
+    }
     const [rows] = await pool.query(
       'SELECT * FROM user_prayer_times WHERE user_id = ?',
       [userId]
@@ -760,7 +726,10 @@ router.get('/salah/custom-times', async (req, res) => {
 router.put('/salah/custom-times', async (req, res) => {
   try {
     const { userId, use_custom, fajr, dhuhr, asr, maghrib, isha } = req.body;
-    const uId = Number(userId) || 1;
+    if (!userId) {
+      return res.status(401).json({ error: 'Login required to set custom times' });
+    }
+    const uId = Number(userId);
 
     await pool.query(
       `INSERT INTO user_prayer_times (user_id, use_custom, fajr, dhuhr, asr, maghrib, isha)
@@ -788,7 +757,16 @@ router.put('/salah/custom-times', async (req, res) => {
 router.get('/salah/yearly-stats', async (req, res) => {
   try {
     const year = Number(req.query.year) || new Date().getFullYear();
-    const userId = Number(req.query.userId) || 1;
+    const userId = req.query.userId ? Number(req.query.userId) : null;
+    if (!userId) {
+      return res.json({
+        year,
+        yearlyTotalPrayers: 0,
+        yearlyOnTimeRatio: 0,
+        yearlyQuranPages: 0,
+        months: [],
+      });
+    }
 
     const [monthlySalah] = await pool.query(
       `SELECT MONTH(log_date) as month, status, COUNT(*) as count 
@@ -925,13 +903,17 @@ router.get('/salah/today', async (req, res) => {
   try {
     const dateStr = getLocalDateStr(req.query.date);
     const targetDate = new Date(`${dateStr}T12:00:00+05:30`);
-    const userId = Number(req.query.userId) || 1;
+    const userId = req.query.userId ? Number(req.query.userId) : null;
 
     // Check if user has personal custom adhan times
-    const [userCustomRows] = await pool.query(
-      'SELECT * FROM user_prayer_times WHERE user_id = ? AND use_custom = TRUE',
-      [userId]
-    );
+    let userCustomRows = [];
+    if (userId) {
+      const [custom] = await pool.query(
+        'SELECT * FROM user_prayer_times WHERE user_id = ? AND use_custom = TRUE',
+        [userId]
+      );
+      userCustomRows = custom;
+    }
 
     const [settingsRows] = await pool.query('SELECT * FROM prayer_settings WHERE id = 1');
     const settings = settingsRows[0] || { city: 'Kochi', country: 'India (Kerala)', latitude: 9.9312, longitude: 76.2673 };
@@ -953,10 +935,14 @@ router.get('/salah/today', async (req, res) => {
       times = computePrayerTimes(settings, targetDate);
     }
 
-    const [logs] = await pool.query(
-      'SELECT prayer_name, status, completed_at, notes FROM salah_logs WHERE log_date = ? AND user_id = ?',
-      [dateStr, userId]
-    );
+    let logs = [];
+    if (userId) {
+      const [userLogs] = await pool.query(
+        'SELECT prayer_name, status, completed_at, notes FROM salah_logs WHERE log_date = ? AND user_id = ?',
+        [dateStr, userId]
+      );
+      logs = userLogs;
+    }
 
     const logMap = {};
     logs.forEach((l) => { logMap[l.prayer_name] = l; });
@@ -1021,8 +1007,11 @@ router.get('/salah/today', async (req, res) => {
 router.post('/salah/log', async (req, res) => {
   try {
     const { prayer_name, status, date, notes, userId } = req.body;
+    if (!userId) {
+      return res.status(401).json({ error: 'Login required to record prayer status' });
+    }
     const logDate = getLocalDateStr(date);
-    const currentUserId = Number(userId) || 1;
+    const currentUserId = Number(userId);
     const validPrayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 
     if (!validPrayers.includes(prayer_name)) {
@@ -1053,7 +1042,10 @@ router.post('/salah/log', async (req, res) => {
 router.get('/salah/history', async (req, res) => {
   try {
     const limit = Number(req.query.days) || 30;
-    const userId = Number(req.query.userId) || 1;
+    const userId = req.query.userId ? Number(req.query.userId) : null;
+    if (!userId) {
+      return res.json({ logs: [], stats: { totalPrayers: 0, completed: 0, jamaah: 0, late: 0, missed: 0 } });
+    }
 
     const [rows] = await pool.query(
       `SELECT log_date, prayer_name, status, completed_at 
@@ -1085,9 +1077,19 @@ router.get('/salah/history', async (req, res) => {
 router.get('/quran/today', async (req, res) => {
   try {
     const dateStr = getLocalDateStr(req.query.date);
-    const userId = Number(req.query.userId) || 1;
+    const userId = req.query.userId ? Number(req.query.userId) : null;
 
     const [settings] = await pool.query('SELECT * FROM quran_settings WHERE id = 1');
+
+    if (!userId) {
+      return res.json({
+        date: dateStr,
+        settings: settings[0] || { daily_goal_target: 2 },
+        todayLog: { completed: false, amount_read: 0, surah_name: '' },
+        streak: 0,
+      });
+    }
+
     const [logs] = await pool.query(
       'SELECT * FROM quran_logs WHERE log_date = ? AND user_id = ?',
       [dateStr, userId]
@@ -1140,8 +1142,11 @@ router.get('/quran/today', async (req, res) => {
 router.post('/quran/log', async (req, res) => {
   try {
     const { date, completed, amount_read, surah_name, notes, userId } = req.body;
+    if (!userId) {
+      return res.status(401).json({ error: 'Login required to log Quran reading' });
+    }
     const logDate = date || new Date().toISOString().slice(0, 10);
-    const currentUserId = Number(userId) || 1;
+    const currentUserId = Number(userId);
     const completedAt = completed ? new Date() : null;
 
     await pool.query(

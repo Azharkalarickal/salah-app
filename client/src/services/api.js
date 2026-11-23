@@ -26,20 +26,10 @@ export async function loginUser({ email, password }) {
 }
 
 export async function fetchUserProfile(userId) {
-  const res = await fetch(`${BASE_URL}/auth/me?userId=${userId || 1}`);
+  if (!userId) return null;
+  const res = await fetch(`${BASE_URL}/auth/me?userId=${userId}`);
   if (!res.ok) throw new Error('Failed to fetch profile');
   return res.json();
-}
-
-export async function initGuestSession(deviceId) {
-  const res = await fetch(`${BASE_URL}/auth/guest-session`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ deviceId }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to initialize session');
-  return data;
 }
 
 // --- ADMIN PANEL ---
@@ -118,7 +108,8 @@ export async function inviteFamilyMember({ groupId, targetUserCode }) {
 }
 
 export async function fetchMyGroups(userId) {
-  const res = await fetch(`${BASE_URL}/groups/my?userId=${userId || 1}`);
+  if (!userId) return [];
+  const res = await fetch(`${BASE_URL}/groups/my?userId=${userId}`);
   if (!res.ok) throw new Error('Failed to fetch groups');
   return res.json();
 }
@@ -206,8 +197,9 @@ export async function updateCallSpeakingStatus({ callId, userId, isSpeaking, isM
 }
 
 export async function fetchMyIncomingGroupCall(userId) {
+  if (!userId) return { hasCall: false };
   try {
-    const res = await fetch(`${BASE_URL}/groups/calls/my-incoming?userId=${userId || 1}`);
+    const res = await fetch(`${BASE_URL}/groups/calls/my-incoming?userId=${userId}`);
     if (res.ok) return res.json();
   } catch (e) { }
   return { hasCall: false };
@@ -215,7 +207,8 @@ export async function fetchMyIncomingGroupCall(userId) {
 
 // --- USER CUSTOM ADHAN TIMES ---
 export async function fetchUserCustomTimes(userId) {
-  const res = await fetch(`${BASE_URL}/salah/custom-times?userId=${userId || 1}`);
+  if (!userId) return { useCustom: false, times: null };
+  const res = await fetch(`${BASE_URL}/salah/custom-times?userId=${userId}`);
   if (!res.ok) throw new Error('Failed to fetch custom times');
   return res.json();
 }
@@ -233,33 +226,36 @@ export async function saveUserCustomTimes(payload) {
 
 // --- SALAH & QURAN ---
 export async function fetchTodaySalah(dateStr, userId) {
-  const uId = userId || 1;
-  const url = dateStr
-    ? `${BASE_URL}/salah/today?date=${dateStr}&userId=${uId}`
-    : `${BASE_URL}/salah/today?userId=${uId}`;
-  const res = await fetch(url);
+  const params = new URLSearchParams();
+  if (dateStr) params.append('date', dateStr);
+  if (userId) params.append('userId', userId);
+  const q = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${BASE_URL}/salah/today${q}`);
   if (!res.ok) throw new Error('Failed to fetch today salah');
   return res.json();
 }
 
 export async function logSalahStatus(prayer_name, status, date, userId) {
+  if (!userId) throw new Error('Authentication required');
   const res = await fetch(`${BASE_URL}/salah/log`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prayer_name, status, date, userId: userId || 1 }),
+    body: JSON.stringify({ prayer_name, status, date, userId }),
   });
   if (!res.ok) throw new Error('Failed to log prayer status');
   return res.json();
 }
 
 export async function fetchSalahHistory(days = 30, userId) {
-  const res = await fetch(`${BASE_URL}/salah/history?days=${days}&userId=${userId || 1}`);
+  if (!userId) return { stats: { completed: 0, jamaah: 0, late: 0, missed: 0, totalPrayers: 0 }, logs: [] };
+  const res = await fetch(`${BASE_URL}/salah/history?days=${days}&userId=${userId}`);
   if (!res.ok) throw new Error('Failed to fetch salah history');
   return res.json();
 }
 
 export async function fetchYearlyStats(year = 2026, userId) {
-  const res = await fetch(`${BASE_URL}/salah/yearly-stats?year=${year}&userId=${userId || 1}`);
+  if (!userId) return { year, yearlyTotalPrayers: 0, yearlyOnTimeRatio: 0, yearlyQuranPages: 0, months: [] };
+  const res = await fetch(`${BASE_URL}/salah/yearly-stats?year=${year}&userId=${userId}`);
   if (!res.ok) throw new Error('Failed to fetch yearly stats');
   return res.json();
 }
@@ -281,20 +277,21 @@ export async function updatePrayerSettings(settings) {
 }
 
 export async function fetchQuranToday(dateStr, userId) {
-  const uId = userId || 1;
-  const url = dateStr
-    ? `${BASE_URL}/quran/today?date=${dateStr}&userId=${uId}`
-    : `${BASE_URL}/quran/today?userId=${uId}`;
-  const res = await fetch(url);
+  const params = new URLSearchParams();
+  if (dateStr) params.append('date', dateStr);
+  if (userId) params.append('userId', userId);
+  const q = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${BASE_URL}/quran/today${q}`);
   if (!res.ok) throw new Error('Failed to fetch Quran status');
   return res.json();
 }
 
 export async function logQuranReading({ completed, amount_read, surah_name, notes, date, userId }) {
+  if (!userId) throw new Error('Authentication required');
   const res = await fetch(`${BASE_URL}/quran/log`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ completed, amount_read, surah_name, notes, date, userId: userId || 1 }),
+    body: JSON.stringify({ completed, amount_read, surah_name, notes, date, userId }),
   });
   if (!res.ok) throw new Error('Failed to update Quran log');
   return res.json();

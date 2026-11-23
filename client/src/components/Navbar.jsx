@@ -74,15 +74,17 @@ export default function Navbar({
           {/* User Profile / Login */}
           <button
             onClick={onOpenAuth}
-            className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 transition active:scale-95 flex items-center gap-1 text-xs"
+            className={`px-2.5 py-1.5 rounded-xl border transition active:scale-95 flex items-center gap-1.5 text-xs font-semibold ${
+              currentUser
+                ? 'bg-slate-900 border-slate-800 hover:bg-slate-800 text-emerald-400'
+                : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold shadow-sm shadow-emerald-500/20'
+            }`}
             title={currentUser ? `Logged in as ${currentUser.name}` : 'Login / Register'}
           >
-            <User size={15} className={currentUser ? 'text-emerald-400' : 'text-slate-400'} />
-            {currentUser && (
-              <span className="font-mono text-[10px] text-emerald-400 font-bold hidden sm:inline">
-                {currentUser.user_code}
-              </span>
-            )}
+            <User size={14} className={currentUser ? 'text-emerald-400' : 'text-slate-950'} />
+            <span className="truncate max-w-[85px]">
+              {currentUser ? (currentUser.name?.split(' ')[0] || currentUser.user_code) : 'Login'}
+            </span>
           </button>
 
           {/* Admin Panel Button */}
